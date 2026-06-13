@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مساندة للاستشارات الهندسية | Musanada Engineering Consultancy</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --navy: #0B3D7A;
+    --navy-dark: #062148;
+    --gold: #C9A24C;
+    --gold-light: #E5C875;
+    --bg: #F8F6F1;
+    --card-bg: #FFFFFF;
+    --text: #1A1A1A;
+    --text-light: #666666;
+    --success: #2D7A3E;
+    --danger: #C00000;
+    --border: #E0DCD3;
+  }
+  body {
+    font-family: 'Tajawal', 'Cairo', -apple-system, sans-serif;
+    background: linear-gradient(135deg, #F8F6F1 0%, #EDE9DE 100%);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  
+  /* === HEADER === */
+  header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-dark) 100%);
+    color: white;
+    padding: 18px 5%;
+    box-shadow: 0 4px 24px rgba(11, 61, 122, 0.25);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .brand-logo {
+    width: 56px;
+    height: 56px;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .brand-logo img { width: 48px; height: 48px; object-fit: contain; }
+  .brand-text h1 {
+    font-size: 22px;
+    font-weight: 900;
+    color: white;
+    margin: 0;
+  }
+  .brand-text .en {
+    font-size: 11px;
+    color: var(--gold-light);
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+  .header-tag {
+    background: rgba(201, 162, 76, 0.2);
+    border: 1px solid var(--gold);
+    color: var(--gold-light);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  
+  /* === HERO === */
+  .hero {
+    text-align: center;
+    padding: 48px 5% 32px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  .hero h2 {
+    font-size: 36px;
+    font-weight: 900;
+    color: var(--navy);
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+  .hero p {
+    font-size: 17px;
+    color: var(--text-light);
+    max-width: 700px;
+    margin: 0 auto 20px;
+  }
+  .hero-badges {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .badge {
+    background: white;
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    color: var(--navy);
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  }
+  .badge::before { content: "✓ "; color: var(--gold); font-weight: 900; }
+  
+  /* === MAIN CONTAINER === */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 5% 60px;
+  }
+  
+  /* === STEPS === */
+  .steps-nav {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 24px 0 32px;
+    flex-wrap: wrap;
+  }
+  .step {
+    background: white;
+    border: 2px solid var(--border);
+    padding: 10px 20px;
+    border-radius: 24px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step.active {
+    background: var(--navy);
+    border-color: var(--navy);
+    color: white;
+  }
+  .step.done {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: white;
+  }
+  .step-num {
+    background: rgba(255,255,255,0.25);
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .step:not(.active):not(.done) .step-num {
+    background: var(--border);
+    color: var(--text-light);
+  }
+  
+  /* === CARDS === */
+  .card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 4px 24px rgba(11, 61, 122, 0.08);
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--gold);
+  }
+  .card-header h3 {
+    font-size: 20px;
+    color: var(--navy);
+    font-weight: 700;
+  }
+  .card-header .icon {
+    background: linear-gradient(135deg, var(--navy), var(--navy-dark));
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 900;
+  }
+  
+  /* === DROP ZONES === */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    background: var(--bg);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .dropzone:hover {
+    border-color: var(--gold);
+    background: #FBF7EE;
+  }
+  .dropzone.dragover {
+    border-color: var(--navy);
+    background: #EFF4FB;
+    transform: scale(1.02);
+  }
+  .dropzone.has-file {
+    border-color: var(--success);
+    background: #F0F8F2;
+    border-style: solid;
+  }
+  .dropzone-icon {
+    font-size: 40px;
+    color: var(--navy);
+    margin-bottom: 10px;
+  }
+  .dropzone-text {
+    color: var(--text-light);
+    font-size: 14px;
+  }
+  .dropzone-text strong { color: var(--navy); }
+  .dropzone-file {
+    color: var(--success);
+    font-weight: 700;
+    font-size: 14px;
+    margin-top: 8px;
+    word-break: break-all;
+  }
+  .dropzone input[type=file] { display: none; }
+  
+  /* === FORM === */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .form-row.single { grid-template-columns: 1fr; }
+  .form-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 6px;
+  }
+  .form-group label .required { color: var(--danger); }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    transition: all 0.2s;
+    background: white;
+    color: var(--text);
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(201, 162, 76, 0.15);
+  }
+  .form-group textarea { min-height: 80px; resize: vertical; }
+  
+  /* === IMAGE UPLOADS GRID === */
+  .images-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .image-upload {
+    text-align: center;
+  }
+  .image-upload h4 {
+    font-size: 14px;
+    color: var(--navy);
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .image-preview {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.2s;
+  }
+  .image-preview:hover { border-color: var(--gold); }
+  .image-preview img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    padding: 8px;
+  }
+  .image-preview-empty {
+    color: var(--text-light);
+    font-size: 30px;
+  }
+  
+  /* === PROJECTS LIST === */
+  .projects-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .project-item {
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 16px;
+    position: relative;
+    border: 1px solid var(--border);
+  }
+  .project-item .remove {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 26px; height: 26px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .project-item h4 {
+    color: var(--navy);
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  .btn-add-project {
+    background: white;
+    border: 2px dashed var(--gold);
+    color: var(--navy);
+    padding: 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    transition: all 0.2s;
+    margin-top: 12px;
+  }
+  .btn-add-project:hover { background: #FBF7EE; }
+  
+  /* === SUBMIT === */
+  .submit-section {
+    text-align: center;
+    padding: 32px 0;
+  }
+  .btn-submit {
+    background: linear-gradient(135deg, var(--gold), #D4B062);
+    color: var(--navy);
+    border: none;
+    padding: 18px 56px;
+    font-size: 18px;
+    font-weight: 900;
+    font-family: inherit;
+    border-radius: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(201, 162, 76, 0.4);
+    transition: all 0.2s;
+  }
+  .btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(201, 162, 76, 0.55);
+  }
+  .btn-submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  /* === PROGRESS === */
+  .progress-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 33, 72, 0.92);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: white;
+    text-align: center;
+    padding: 20px;
+  }
+  .progress-overlay.active { display: flex; }
+  .progress-spinner {
+    width: 80px; height: 80px;
+    border: 5px solid rgba(201, 162, 76, 0.2);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 24px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: var(--gold-light); }
+  .progress-stage { font-size: 16px; color: white; margin-bottom: 16px; min-height: 26px; }
+  .progress-log {
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
+    padding: 16px;
+    max-width: 700px;
+    width: 90%;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    text-align: right;
+    direction: ltr;
+  }
+  .progress-log div { padding: 2px 0; opacity: 0.8; }
+  .progress-log div.current { opacity: 1; color: var(--gold-light); }
+  
+  /* === RESULT === */
+  .result-section { display: none; }
+  .result-section.active { display: block; }
+  .result-card {
+    background: linear-gradient(135deg, var(--success), #1F5E2C);
+    color: white;
+    text-align: center;
+    padding: 40px 24px;
+    border-radius: 16px;
+    margin-bottom: 24px;
+  }
+  .result-card h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+  .result-files {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .result-file {
+    background: white;
+    color: var(--navy);
+    padding: 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .result-file:hover { transform: translateY(-2px); }
+  .result-file-icon {
+    background: var(--navy);
+    color: white;
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    flex-shrink: 0;
+  }
+  .result-file-info { flex: 1; text-align: right; }
+  .result-file-info strong { font-size: 14px; }
+  .result-file-info small { color: var(--text-light); font-size: 11px; display: block; margin-top: 2px; }
+  
+  /* === FOOTER === */
+  footer {
+    background: var(--navy-dark);
+    color: rgba(255,255,255,0.7);
+    text-align: center;
+    padding: 24px 5%;
+    font-size: 13px;
+    margin-top: 60px;
+  }
+  
+  @media (max-width: 768px) {
+    .form-row, .form-row.triple, .images-grid { grid-template-columns: 1fr; }
+    .hero h2 { font-size: 24px; }
+    .brand-text h1 { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-content">
+    <div class="brand">
+      <div class="brand-logo">
+        <img src="/static/favicon.png" alt="Musanada">
+      </div>
+      <div class="brand-text">
+        <h1>مساندة للاستشارات الهندسية</h1>
+        <div class="en">MUSANADA ENGINEERING CONSULTANCY</div>
+      </div>
+    </div>
+    <span class="header-tag">منصة تجهيز ملفات المناقصات</span>
+  </div>
+</header>
+
+<section class="hero">
+  <h2>جهّز حزمة مناقصتك الكاملة في دقائق</h2>
+  <p>ارفع ملف المناقصة + بيانات شركتك + اللوجو والختم، وسنوفر لك: النماذج المعبأة (8 نماذج)، النموذج المالي بـ 10 شيتات، المخطط الهندسي، والمنظور 3D — جاهز للتقديم.</p>
+  <div class="hero-badges">
+    <span class="badge">8 نماذج DOCX/PDF</span>
+    <span class="badge">نموذج Excel 10 شيتات</span>
+    <span class="badge">Site Plan هندسي</span>
+    <span class="badge">3D Renders</span>
+    <span class="badge">A4 Print-Ready</span>
+  </div>
+</section>
+
+<div class="container">
+
+  <div class="steps-nav">
+    <div class="step active" data-step="1"><span class="step-num">1</span> ملف المناقصة</div>
+    <div class="step" data-step="2"><span class="step-num">2</span> بيانات الشركة</div>
+    <div class="step" data-step="3"><span class="step-num">3</span> الصور (لوجو/ختم/توقيع)</div>
+    <div class="step" data-step="4"><span class="step-num">4</span> المشاريع السابقة</div>
+    <div class="step" data-step="5"><span class="step-num">5</span> توليد الحزمة</div>
+  </div>
+
+  <form id="mainForm">
+
+    <!-- STEP 1: TENDER FILE -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon">1</div>
+        <h3>ملف المناقصة</h3>
+      </div>
+      <div class="dropzone" id="tenderDropzone">
+        <input type="file" id="tenderFile" name="tender_file" accept=".zip,.pdf,.rar">
+        <div class="dropzone-icon">📁</div>
+        <div class="dropzone-text">
+          <strong>اسحب وأفلت ملف المناقصة هنا</strong>
+          <br>أو اضغط للاختيار (ZIP / PDF / RAR)
+        </div>
+        <div class="dropzone-file" id="tenderFileName"></div>
+      </div>
+    </div>
+
+    <!-- STEP 2: COMPANY DATA -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon">2</div>
+        <h3>بيانات الشركة</h3>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>الاسم القانوني للشركة <span class="required">*</span></label>
+          <input type="text" name="company_legal_name" required placeholder="مثال: مساندة للمقاولات ذ.م.م">
+        </div>
+        <div class="form-group">
+          <label>الاسم المختصر</label>
+          <input type="text" name="company_short_name" placeholder="مثال: MUSANADA">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>الشكل القانوني <span class="required">*</span></label>
+          <select name="legal_form" required>
+            <option value="">اختر...</option>
+            <option>Limited Liability Company (LLC)</option>
+            <option>Sole Proprietorship LLC</option>
+            <option>Public Joint Stock Company (PJSC)</option>
+            <option>Private Joint Stock Company</option>
+            <option>Partnership</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>تاريخ التأسيس <span class="required">*</span></label>
+          <input type="date" name="establishment_date" required>
+        </div>
+      </div>
+
+      <div class="form-row single">
+        <div class="form-group">
+          <label>طبيعة النشاط <span class="required">*</span></label>
+          <input type="text" name="nature_of_business" required placeholder="مثال: تطوير عقاري، مقاولات عامة، إدارة عقارات">
+        </div>
+      </div>
+
+      <div class="form-row single">
+        <div class="form-group">
+          <label>عنوان المقر الرئيسي <span class="required">*</span></label>
+          <input type="text" name="hq_address" required placeholder="مثال: قطعة 33، مصفح 40، أبوظبي">
+        </div>
+      </div>
+
+      <div class="form-row triple">
+        <div class="form-group">
+          <label>هاتف</label>
+          <input type="text" name="company_phone" placeholder="+971 2 XXX XXXX">
+        </div>
+        <div class="form-group">
+          <label>فاكس</label>
+          <input type="text" name="company_fax" placeholder="+971 2 XXX XXXX">
+        </div>
+        <div class="form-group">
+          <label>إيميل <span class="required">*</span></label>
+          <input type="email" name="company_email" required placeholder="info@company.ae">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>الموقع الإلكتروني</label>
+          <input type="text" name="company_website" placeholder="www.company.ae">
+        </div>
+        <div class="form-group">
+          <label>رقم الرخصة التجارية <span class="required">*</span></label>
+          <input type="text" name="trade_license_no" required placeholder="CN-XXXXXXX">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>الممثل المفوض (الاسم الكامل) <span class="required">*</span></label>
+          <input type="text" name="authorized_signatory_name" required placeholder="اسم الممثل المفوض">
+        </div>
+        <div class="form-group">
+          <label>المنصب <span class="required">*</span></label>
+          <input type="text" name="authorized_signatory_title" required placeholder="مثال: المالك / المدير العام">
+        </div>
+      </div>
+
+      <div class="form-row triple">
+        <div class="form-group">
+          <label>الشخص للتواصل (الاسم)</label>
+          <input type="text" name="contact_person_name">
+        </div>
+        <div class="form-group">
+          <label>هاتف</label>
+          <input type="text" name="contact_person_phone" placeholder="+971 5X XXX XXXX">
+        </div>
+        <div class="form-group">
+          <label>إيميل</label>
+          <input type="email" name="contact_person_email">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>سنوات الخبرة</label>
+          <input type="number" name="years_experience" placeholder="15">
+        </div>
+        <div class="form-group">
+          <label>مجال الخبرة (Form D - item 18)</label>
+          <input type="text" name="experience_domain" placeholder="building and operating commercial facilities">
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3: IMAGES -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon">3</div>
+        <h3>اللوجو والختم والتوقيع</h3>
+      </div>
+      <p style="color:var(--text-light); margin-bottom:16px; font-size:13px;">
+        ارفع صور PNG ترانسبرنت مفضّلة. ستضاف تلقائياً إلى كل النماذج.
+      </p>
+      
+      <div class="images-grid">
+        <div class="image-upload">
+          <h4>🏢 لوجو الشركة</h4>
+          <label class="image-preview" id="logoPreview">
+            <input type="file" name="logo" accept="image/*" hidden id="logoInput">
+            <div class="image-preview-empty">+</div>
+          </label>
+        </div>
+        <div class="image-upload">
+          <h4>✍️ التوقيع</h4>
+          <label class="image-preview" id="signaturePreview">
+            <input type="file" name="signature" accept="image/*" hidden id="signatureInput">
+            <div class="image-preview-empty">+</div>
+          </label>
+        </div>
+        <div class="image-upload">
+          <h4>📋 الختم</h4>
+          <label class="image-preview" id="stampPreview">
+            <input type="file" name="stamp" accept="image/*" hidden id="stampInput">
+            <div class="image-preview-empty">+</div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: PAST PROJECTS -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon">4</div>
+        <h3>المشاريع السابقة (لـ Form G)</h3>
+      </div>
+      <p style="color:var(--text-light); margin-bottom:16px; font-size:13px;">
+        أضف 5+ مشاريع لزيادة نقاط الخبرة. المشاريع المكتملة + المشاريع تحت الإنشاء.
+      </p>
+      
+      <div class="projects-list" id="projectsList">
+        <!-- يضاف ديناميكياً -->
+      </div>
+      <button type="button" class="btn-add-project" id="addProjectBtn">+ إضافة مشروع</button>
+    </div>
+
+    <!-- SUBMIT -->
+    <div class="submit-section">
+      <button type="submit" class="btn-submit" id="submitBtn">
+        🚀 توليد الحزمة الكاملة
+      </button>
+      <p style="color:var(--text-light); font-size:12px; margin-top:12px;">
+        العملية تستغرق 1-3 دقائق حسب عدد المناقصات
+      </p>
+    </div>
+
+  </form>
+
+  <!-- RESULT -->
+  <div class="result-section" id="resultSection">
+    <div class="result-card">
+      <h2>✅ تم تجهيز الحزمة بنجاح!</h2>
+      <p>اضغط على أي ملف لتنزيله</p>
+      <div class="result-files" id="resultFiles"></div>
+    </div>
+    <div style="text-align:center;">
+      <button class="btn-submit" onclick="location.reload()">معالجة مناقصة جديدة</button>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <p>© 2026 مساندة للاستشارات الهندسية | Musanada Engineering Consultancy</p>
+  <p style="margin-top:6px; font-size:11px; opacity:0.7;">منصة AI لتجهيز ملفات مناقصات DMT و ADIO أبوظبي</p>
+</footer>
+
+<!-- PROGRESS OVERLAY -->
+<div class="progress-overlay" id="progressOverlay">
+  <div class="progress-spinner"></div>
+  <div class="progress-title">جاري تجهيز حزمة المناقصة</div>
+  <div class="progress-stage" id="progressStage">يبدأ خلال لحظات...</div>
+  <div class="progress-log" id="progressLog"></div>
+</div>
+
+<script>
+  // ========== DRAG & DROP ==========
+  function setupDropzone(dropzoneId, inputId, nameElId) {
+    const dropzone = document.getElementById(dropzoneId);
+    const input = document.getElementById(inputId);
+    const nameEl = document.getElementById(nameElId);
+    
+    dropzone.addEventListener('click', () => input.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        input.dispatchEvent(new Event('change'));
+      }
+    });
+    input.addEventListener('change', () => {
+      if (input.files.length) {
+        nameEl.textContent = '📎 ' + input.files[0].name + ' (' + (input.files[0].size/1024/1024).toFixed(1) + ' MB)';
+        dropzone.classList.add('has-file');
+      }
+    });
+  }
+  setupDropzone('tenderDropzone', 'tenderFile', 'tenderFileName');
+
+  // ========== IMAGE PREVIEWS ==========
+  function setupImagePreview(previewId, inputId) {
+    const preview = document.getElementById(previewId);
+    const input = document.getElementById(inputId);
+    preview.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      if (input.files.length) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          preview.innerHTML = `<img src="${e.target.result}" alt="">`;
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    });
+  }
+  setupImagePreview('logoPreview', 'logoInput');
+  setupImagePreview('signaturePreview', 'signatureInput');
+  setupImagePreview('stampPreview', 'stampInput');
+
+  // ========== PROJECTS ==========
+  let projectCount = 0;
+  function addProject() {
+    projectCount++;
+    const div = document.createElement('div');
+    div.className = 'project-item';
+    div.innerHTML = `
+      <button type="button" class="remove" onclick="this.parentElement.remove()">×</button>
+      <h4>مشروع رقم ${projectCount}</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>اسم المشروع</label>
+          <input type="text" name="proj_name[]" placeholder="مثال: مغسلة سيارات الظفرة">
+        </div>
+        <div class="form-group">
+          <label>الموقع</label>
+          <input type="text" name="proj_location[]" placeholder="غياثي، أبوظبي">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>وصف العمل</label>
+          <input type="text" name="proj_scope[]" placeholder="تطوير وإدارة وتشغيل">
+        </div>
+        <div class="form-group">
+          <label>قيمة المشروع (AED)</label>
+          <input type="number" name="proj_amount[]" placeholder="5000000">
+        </div>
+      </div>
+      <div class="form-row triple">
+        <div class="form-group">
+          <label>تاريخ البدء</label>
+          <input type="date" name="proj_start[]">
+        </div>
+        <div class="form-group">
+          <label>تاريخ الإنتهاء</label>
+          <input type="date" name="proj_end[]">
+        </div>
+        <div class="form-group">
+          <label>المساحة (م²)</label>
+          <input type="number" name="proj_gfa[]" placeholder="1200">
+        </div>
+      </div>
+    `;
+    document.getElementById('projectsList').appendChild(div);
+  }
+  document.getElementById('addProjectBtn').addEventListener('click', addProject);
+  // Add 3 empty projects by default
+  for (let i = 0; i < 3; i++) addProject();
+
+  // ========== STEPS NAV ==========
+  document.querySelectorAll('.card').forEach((card, i) => {
+    new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+          const step = document.querySelector(`.step[data-step="${i+1}"]`);
+          if (step) step.classList.add('active');
+        }
+      });
+    }, { threshold: 0.5 }).observe(card);
+  });
+
+  // ========== SUBMIT ==========
+  const stages = [
+    "استخراج ملف المناقصة...",
+    "قراءة وثيقة المناقصة (Auction Document)...",
+    "تحديد الجهة (DMT/ADIO) واستخراج البيانات...",
+    "تجهيز بيانات الشركة...",
+    "توليد النماذج (Form A, D, E, G, H, I)...",
+    "بناء النموذج المالي (Excel - 10 شيتات)...",
+    "توليد المخطط الهندسي (Site Plan)...",
+    "توليد المنظور 3D Renders...",
+    "تجميع الحزمة النهائية...",
+    "اكتمل!"
+  ];
+  
+  document.getElementById('mainForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    
+    if (!document.getElementById('tenderFile').files.length) {
+      alert('⚠️ من فضلك ارفع ملف المناقصة');
+      return;
+    }
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    
+    // Show progress overlay
+    const overlay = document.getElementById('progressOverlay');
+    const stageEl = document.getElementById('progressStage');
+    const logEl = document.getElementById('progressLog');
+    overlay.classList.add('active');
+    logEl.innerHTML = '';
+    
+    // Simulate stage progression (will be replaced with real progress via SSE)
+    let currentStage = 0;
+    const stageInterval = setInterval(() => {
+      if (currentStage < stages.length - 1) {
+        stageEl.textContent = stages[currentStage];
+        const div = document.createElement('div');
+        div.textContent = `[${new Date().toLocaleTimeString()}] ${stages[currentStage]}`;
+        div.className = 'current';
+        logEl.querySelectorAll('div').forEach(d => d.classList.remove('current'));
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+        currentStage++;
+      }
+    }, 8000);
+    
+    try {
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      clearInterval(stageInterval);
+      
+      if (!response.ok) {
+        throw new Error('فشل الطلب: ' + response.status);
+      }
+      
+      const data = await response.json();
+      
+      stageEl.textContent = '✅ اكتمل!';
+      
+      // Hide overlay & show results
+      setTimeout(() => {
+        overlay.classList.remove('active');
+        showResults(data);
+      }, 1000);
+      
+    } catch (err) {
+      clearInterval(stageInterval);
+      overlay.classList.remove('active');
+      alert('حصل خطأ: ' + err.message);
+    }
+  });
+  
+  function showResults(data) {
+    const resultSection = document.getElementById('resultSection');
+    const filesEl = document.getElementById('resultFiles');
+    filesEl.innerHTML = '';
+    
+    (data.files || []).forEach(f => {
+      const a = document.createElement('a');
+      a.href = f.url;
+      a.target = '_blank';
+      a.className = 'result-file';
+      const ext = (f.name.split('.').pop() || '').toUpperCase();
+      a.innerHTML = `
+        <div class="result-file-icon">${ext}</div>
+        <div class="result-file-info">
+          <strong>${f.name}</strong>
+          <small>${f.description || ''}</small>
+        </div>
+      `;
+      filesEl.appendChild(a);
+    });
+    
+    document.querySelector('#mainForm').style.display = 'none';
+    resultSection.classList.add('active');
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+  }
+</script>
+
+</body>
+</html>

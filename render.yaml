@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: musanada
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: OUTPUTS_DIR
+        value: /tmp/musanada_outputs
+      # Optional: set this in Render dashboard for 3D renders
+      # - key: OPENAI_API_KEY
+      #   sync: false
