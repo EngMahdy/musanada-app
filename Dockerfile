@@ -4,7 +4,6 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     p7zip-full \
-    p7zip-rar \
     unrar-free \
     fonts-noto \
     fonts-dejavu \
