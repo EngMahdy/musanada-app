@@ -22,11 +22,15 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
+
+# Max upload size: 1 GB (covers 99% of tender ZIPs)
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024  # 1 GB
 
 
 # ============ JOB STORE (in-memory) ============
@@ -67,6 +71,26 @@ SEVENZ = "7z"
 # ============ APP ============
 app = FastAPI(title="Musanada Engineering Consultancy")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+# Middleware to enforce upload size limit explicitly
+class LimitUploadSize(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and request.url.path.startswith("/api/"):
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > MAX_UPLOAD_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "status": "error",
+                        "message": f"الملف كبير جداً. الحد الأقصى {MAX_UPLOAD_BYTES // (1024*1024)} ميجا.",
+                        "size_mb": int(content_length) // (1024*1024),
+                        "max_mb": MAX_UPLOAD_BYTES // (1024*1024),
+                    }
+                )
+        return await call_next(request)
+
+app.add_middleware(LimitUploadSize)
 
 # Static files
 app.mount("/static", StaticFiles(directory=str(BRAND_DIR)), name="static")
@@ -850,6 +874,22 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 saved_docs,
                 extracted_intel
             )
+            
+            # ===== STRATEGIC AI ADVISOR (NEW) =====
+            # AI thinks strategically: pricing recommendations, ROI, market analysis,
+            # per-form recommendations, action plan
+            update_job(job_id, stage="🧠 AI يفكر استراتيجياً (تحليل مالي + فني + قانوني + سوقي)...", progress=72)
+            try:
+                advisor_md = job_dir / "results" / safe_name / "08_Strategic_Advisor.md"
+                run_cmd([
+                    "python3", str(SCRIPTS_DIR / "strategic_advisor.py"),
+                    str(tender_ai_path),
+                    str(forms_data_path),
+                    str(advisor_md)
+                ])
+                print(f"✓ Strategic advisor saved: {advisor_md.name}")
+            except Exception as adv_err:
+                print(f"⚠ Strategic advisor failed: {adv_err}")
             
             # Build DYNAMIC CHECKLIST from AI intelligence
             update_job(job_id, stage="بناء قائمة المراجعة الديناميكية...", progress=75)
