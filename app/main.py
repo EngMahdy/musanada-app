@@ -454,41 +454,72 @@ def generate_architectural(meta, output_dir, name):
 
 
 def generate_image_dalle(prompt, output_path):
-    """Generate via OpenAI DALL-E 3 (production environment)."""
+    """Generate via OpenAI gpt-image-2 (latest, replaces DALL-E 3)."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return False
     
     try:
         import requests
-        response = requests.post(
-            "https://api.openai.com/v1/images/generations",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "dall-e-3",
-                "prompt": prompt[:1000],  # DALL-E max prompt
+        import base64
+        
+        # Try newest model first, fallback to older
+        for model, size in [
+            ("gpt-image-2", "1536x1024"),
+            ("gpt-image-1", "1536x1024"),
+            ("dall-e-3", "1792x1024"),
+        ]:
+            payload = {
+                "model": model,
+                "prompt": prompt[:4000],
                 "n": 1,
-                "size": "1792x1024",
-                "quality": "standard",
-            },
-            timeout=120
-        )
-        if response.status_code == 200:
-            data = response.json()
-            url = data["data"][0]["url"]
-            # Download
-            img_response = requests.get(url, timeout=60)
-            if img_response.status_code == 200:
-                with open(output_path, "wb") as f:
-                    f.write(img_response.content)
-                return True
+                "size": size,
+            }
+            # dall-e-3 needs quality param, gpt-image doesn't
+            if model == "dall-e-3":
+                payload["quality"] = "standard"
+            
+            response = requests.post(
+                "https://api.openai.com/v1/images/generations",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=payload,
+                timeout=180
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                item = data["data"][0]
+                
+                # gpt-image-X returns base64, dall-e-3 returns URL
+                if "b64_json" in item and item["b64_json"]:
+                    with open(output_path, "wb") as f:
+                        f.write(base64.b64decode(item["b64_json"]))
+                    print(f"✓ Generated with {model}")
+                    return True
+                elif "url" in item and item["url"]:
+                    img_response = requests.get(item["url"], timeout=60)
+                    if img_response.status_code == 200:
+                        with open(output_path, "wb") as f:
+                            f.write(img_response.content)
+                        print(f"✓ Generated with {model}")
+                        return True
+            else:
+                err = response.json().get("error", {})
+                err_msg = err.get("message", "")
+                # Skip model-not-found and try next
+                if "does not exist" in err_msg or "not found" in err_msg.lower():
+                    print(f"  {model}: not available, trying next...")
+                    continue
+                else:
+                    print(f"  {model}: {err_msg[:100]}")
+                    return False
+        return False
     except Exception as e:
-        print(f"DALL-E gen failed: {e}")
-    
-    return False
+        print(f"Image gen failed: {e}")
+        return False
 
 
 def create_placeholder_image(output_path, filename):
