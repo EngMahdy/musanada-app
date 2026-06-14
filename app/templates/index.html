@@ -1223,19 +1223,6 @@
   });
 
   // ========== SUBMIT ==========
-  const stages = [
-    "استخراج ملف المناقصة...",
-    "قراءة وثيقة المناقصة (Auction Document)...",
-    "تحديد الجهة (DMT/ADIO) واستخراج البيانات...",
-    "تجهيز بيانات الشركة...",
-    "توليد النماذج (Form A, D, E, G, H, I)...",
-    "بناء النموذج المالي (Excel - 10 شيتات)...",
-    "توليد المخطط الهندسي (Site Plan)...",
-    "توليد المنظور 3D Renders...",
-    "تجميع الحزمة النهائية...",
-    "اكتمل!"
-  ];
-  
   document.getElementById('mainForm').addEventListener('submit', async e => {
     e.preventDefault();
     
@@ -1268,45 +1255,92 @@
     overlay.classList.add('active');
     logEl.innerHTML = '';
     
-    // Simulate stage progression (will be replaced with real progress via SSE)
-    let currentStage = 0;
-    const stageInterval = setInterval(() => {
-      if (currentStage < stages.length - 1) {
-        stageEl.textContent = stages[currentStage];
-        const div = document.createElement('div');
-        div.textContent = `[${new Date().toLocaleTimeString()}] ${stages[currentStage]}`;
-        div.className = 'current';
-        logEl.querySelectorAll('div').forEach(d => d.classList.remove('current'));
-        logEl.appendChild(div);
-        logEl.scrollTop = logEl.scrollHeight;
-        currentStage++;
-      }
-    }, 8000);
+    // Show a progress bar via a CSS overlay
+    const titleEl = document.querySelector('.progress-title');
+    
+    function addLog(text) {
+      const div = document.createElement('div');
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      div.className = 'current';
+      logEl.querySelectorAll('div').forEach(d => d.classList.remove('current'));
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
     
     try {
+      // Step 1: Submit form, get job_id immediately
+      stageEl.textContent = 'جاري رفع الملفات...';
+      addLog('بدء رفع الملفات إلى السيرفر');
+      
       const response = await fetch('/api/process', {
         method: 'POST',
         body: formData,
       });
       
-      clearInterval(stageInterval);
-      
       if (!response.ok) {
-        throw new Error('فشل الطلب: ' + response.status);
+        throw new Error('فشل رفع الملفات: ' + response.status);
       }
       
-      const data = await response.json();
+      const submitData = await response.json();
       
-      stageEl.textContent = '✅ اكتمل!';
+      if (!submitData.job_id) {
+        throw new Error('لم يتم الحصول على معرّف المهمة');
+      }
       
-      // Hide overlay & show results
-      setTimeout(() => {
-        overlay.classList.remove('active');
-        showResults(data);
-      }, 1000);
+      const jobId = submitData.job_id;
+      addLog(`✓ تم استلام الملفات (Job ID: ${jobId})`);
+      titleEl.textContent = 'جاري تجهيز الحزمة في الخلفية...';
+      
+      // Step 2: Poll job status every 4 seconds
+      let lastStage = '';
+      let lastProgress = 0;
+      let attempts = 0;
+      const maxAttempts = 150;  // 10 minutes max
+      
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 4000));
+        attempts++;
+        
+        let jobStatus;
+        try {
+          const statusResp = await fetch(`/api/job/${jobId}`);
+          jobStatus = await statusResp.json();
+        } catch (err) {
+          addLog(`⚠ خطأ في الاستعلام: ${err.message}`);
+          continue;
+        }
+        
+        // Update UI if stage changed
+        if (jobStatus.stage && jobStatus.stage !== lastStage) {
+          stageEl.textContent = `${jobStatus.stage}${jobStatus.progress ? ' (' + jobStatus.progress + '%)' : ''}`;
+          addLog(jobStatus.stage);
+          lastStage = jobStatus.stage;
+          lastProgress = jobStatus.progress;
+        }
+        
+        // Check terminal states
+        if (jobStatus.status === 'ok') {
+          stageEl.textContent = '✅ اكتمل!';
+          addLog(`✓ تم بنجاح! ${jobStatus.files?.length || 0} ملف`);
+          setTimeout(() => {
+            overlay.classList.remove('active');
+            showResults(jobStatus);
+          }, 1200);
+          return;
+        }
+        
+        if (jobStatus.status === 'error') {
+          overlay.classList.remove('active');
+          alert('حصل خطأ: ' + (jobStatus.message || 'unknown'));
+          return;
+        }
+      }
+      
+      // Timeout
+      overlay.classList.remove('active');
+      alert('انتهى الوقت دون اكتمال (10 دقائق). راجع السيرفر.');
       
     } catch (err) {
-      clearInterval(stageInterval);
       overlay.classList.remove('active');
       alert('حصل خطأ: ' + err.message);
     }

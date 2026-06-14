@@ -1,6 +1,11 @@
 """
 Musanada Engineering Consultancy — Tender Package Generator
 Production-ready FastAPI app for deployment on Render/Railway.
+
+Architecture:
+- POST /api/process → starts a background job, returns job_id immediately
+- GET /api/job/{job_id} → polls job status (progress + results)
+- This avoids the 5-second HTTP health-check timeout that crashes long requests
 """
 
 import os
@@ -11,14 +16,37 @@ import zipfile
 import subprocess
 import uuid
 import re
+import threading
+import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+
+
+# ============ JOB STORE (in-memory) ============
+# Maps job_id → {status, progress, stage, message, files, error, started_at, finished_at}
+JOBS = {}
+JOBS_LOCK = threading.Lock()
+
+
+def update_job(job_id: str, **kwargs):
+    """Thread-safe job update."""
+    with JOBS_LOCK:
+        if job_id not in JOBS:
+            JOBS[job_id] = {}
+        JOBS[job_id].update(kwargs)
+
+
+def get_job(job_id: str) -> dict:
+    """Thread-safe job read."""
+    with JOBS_LOCK:
+        return dict(JOBS.get(job_id, {}))
 
 # ============ CONFIG ============
 APP_DIR = Path(__file__).resolve().parent
@@ -62,8 +90,18 @@ async def health():
     }
 
 
+@app.get("/api/job/{job_id}")
+async def get_job_status(job_id: str):
+    """Poll job status. Returns: status, stage, progress %, files (if done), error."""
+    job = get_job(job_id)
+    if not job:
+        return JSONResponse({"status": "not_found", "message": "Job not found"}, status_code=404)
+    return JSONResponse(job)
+
+
 @app.post("/api/process")
 async def process_tender(
+    background_tasks: BackgroundTasks,
     # Tender files (multiple allowed)
     tender_file: list[UploadFile] = File(...),
     # Company data — ALL OPTIONAL (AI will extract from uploaded documents if not provided)
@@ -105,10 +143,22 @@ async def process_tender(
     proj_end: list = Form([]),
     proj_gfa: list = Form([]),
 ):
-    """Main processing endpoint."""
+    """Submit tender for processing. Returns job_id immediately - poll /api/job/{id}.
+    
+    IMPORTANT: This handler must finish QUICKLY (< 30s) to avoid HTTP timeout.
+    All file saves happen synchronously, then heavy work is spawned in a thread.
+    """
     job_id = uuid.uuid4().hex[:12]
     job_dir = OUTPUTS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize job state
+    update_job(job_id,
+        status="processing",
+        stage="رفع الملفات...",
+        progress=5,
+        started_at=datetime.now().isoformat(),
+    )
     
     try:
         # ===== STEP 1: Save tender file(s) =====
@@ -189,6 +239,123 @@ async def process_tender(
                         shutil.copyfileobj(uf.file, f)
                     saved_docs.setdefault(category, []).append(p)
                     print(f"✓ Saved {category}: {p.name}")
+        
+        # ===== Upload phase done — spawn background thread =====
+        update_job(job_id, stage="جاري المعالجة في الخلفية...", progress=15)
+        
+        # Snapshot user-provided form data into a dict for the background worker
+        form_snapshot = {
+            "company_legal_name": company_legal_name,
+            "company_short_name": company_short_name,
+            "legal_form": legal_form,
+            "establishment_date": establishment_date,
+            "nature_of_business": nature_of_business,
+            "hq_address": hq_address,
+            "company_phone": company_phone,
+            "company_fax": company_fax,
+            "company_email": company_email,
+            "company_website": company_website,
+            "trade_license_no": trade_license_no,
+            "authorized_signatory_name": authorized_signatory_name,
+            "authorized_signatory_title": authorized_signatory_title,
+            "contact_person_name": contact_person_name,
+            "contact_person_phone": contact_person_phone,
+            "contact_person_email": contact_person_email,
+            "years_experience": years_experience,
+            "experience_domain": experience_domain,
+            "proj_name": list(proj_name),
+            "proj_location": list(proj_location),
+            "proj_scope": list(proj_scope),
+            "proj_amount": list(proj_amount),
+            "proj_start": list(proj_start),
+            "proj_end": list(proj_end),
+            "proj_gfa": list(proj_gfa),
+            "logo_path": str(logo_path) if logo_path else None,
+            "sig_path": str(sig_path) if sig_path else None,
+            "stamp_path": str(stamp_path) if stamp_path else None,
+            "tender_files_saved": [str(p) for p in tender_files_saved],
+            "saved_docs": {k: [str(p) for p in v] for k, v in saved_docs.items()},
+        }
+        
+        # Save snapshot so background thread can read it
+        (job_dir / "form_snapshot.json").write_text(
+            json.dumps(form_snapshot, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        
+        # Spawn background thread
+        thread = threading.Thread(
+            target=_run_processing_in_background,
+            args=(job_id, str(job_dir)),
+            daemon=True,
+        )
+        thread.start()
+        
+        # Return immediately with job_id
+        return JSONResponse({
+            "status": "processing",
+            "job_id": job_id,
+            "poll_url": f"/api/job/{job_id}",
+            "message": "تم استلام الملفات. تابع التقدم عبر poll_url"
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        update_job(job_id, status="error", message=str(e), error=traceback.format_exc()[:1000])
+        return JSONResponse({"status": "error", "job_id": job_id, "message": str(e)}, status_code=500)
+
+
+def _run_processing_in_background(job_id: str, job_dir_str: str):
+    """The heavy-lifting function. Runs in a background thread.
+    Updates JOBS[job_id] with progress."""
+    job_dir = Path(job_dir_str)
+    
+    try:
+        # Load form snapshot
+        form_data = json.loads((job_dir / "form_snapshot.json").read_text(encoding="utf-8"))
+        
+        # Reconstruct paths
+        saved_docs = {k: [Path(p) for p in v] for k, v in form_data["saved_docs"].items()}
+        tender_files_saved = [Path(p) for p in form_data["tender_files_saved"]]
+        logo_path = Path(form_data["logo_path"]) if form_data.get("logo_path") else None
+        sig_path = Path(form_data["sig_path"]) if form_data.get("sig_path") else None
+        stamp_path = Path(form_data["stamp_path"]) if form_data.get("stamp_path") else None
+        
+        # Reconstruct user input vars (just aliases)
+        company_legal_name = form_data["company_legal_name"]
+        company_short_name = form_data["company_short_name"]
+        legal_form = form_data["legal_form"]
+        establishment_date = form_data["establishment_date"]
+        nature_of_business = form_data["nature_of_business"]
+        hq_address = form_data["hq_address"]
+        company_phone = form_data["company_phone"]
+        company_fax = form_data["company_fax"]
+        company_email = form_data["company_email"]
+        company_website = form_data["company_website"]
+        trade_license_no = form_data["trade_license_no"]
+        authorized_signatory_name = form_data["authorized_signatory_name"]
+        authorized_signatory_title = form_data["authorized_signatory_title"]
+        contact_person_name = form_data["contact_person_name"]
+        contact_person_phone = form_data["contact_person_phone"]
+        contact_person_email = form_data["contact_person_email"]
+        years_experience = form_data["years_experience"]
+        experience_domain = form_data["experience_domain"]
+        proj_name = form_data["proj_name"]
+        proj_location = form_data["proj_location"]
+        proj_scope = form_data["proj_scope"]
+        proj_amount = form_data["proj_amount"]
+        proj_start = form_data["proj_start"]
+        proj_end = form_data["proj_end"]
+        proj_gfa = form_data["proj_gfa"]
+        
+        # Primary tender filename
+        tender_path = tender_files_saved[0]
+        tender_filename = tender_path.name
+        
+        # ===== AI extraction =====
+        update_job(job_id, stage="استخراج البيانات من الملفات (AI)...", progress=20)
         
         # Extract intelligence from documents (process ALL files in each category)
         extracted_intel = {}
@@ -323,6 +490,7 @@ async def process_tender(
         bidder_data_path = job_dir / "bidder_data.json"
         bidder_data_path.write_text(json.dumps(bidder_data, ensure_ascii=False, indent=2), encoding="utf-8")
         
+        update_job(job_id, stage="فك ملف المناقصة (ZIP/RAR)...", progress=30)
         # ===== STEP 4: Extract & normalize tender files =====
         extracted_dir = job_dir / "extracted_tender"
         extracted_dir.mkdir(exist_ok=True)
@@ -481,8 +649,10 @@ async def process_tender(
             if p.is_file():
                 print(f"  {p.relative_to(extracted_dir)}")
         
+        update_job(job_id, stage="قراءة وثيقة المناقصة...", progress=40)
         run_cmd(["python3", str(SCRIPTS_DIR / "extract_tender.py"), str(input_dir), str(workspace_dir)])
         
+        update_job(job_id, stage="تحليل المناقصة...", progress=50)
         # ===== STEP 6: Build analysis =====
         run_cmd(["python3", str(SCRIPTS_DIR / "build_analysis.py"), str(workspace_dir)])
         
@@ -532,6 +702,7 @@ async def process_tender(
             forms_data_path = job_dir / f"forms_data_{safe_name}.json"
             forms_data_path.write_text(json.dumps(forms_data, ensure_ascii=False, indent=2), encoding="utf-8")
             
+            update_job(job_id, stage=f"توليد النماذج (Form A, D, E, G, H, I)...", progress=60)
             run_cmd(["python3", str(SCRIPTS_DIR / "generate_adio_forms.py"), 
                      str(forms_data_path), str(forms_dir)])
             
@@ -549,6 +720,7 @@ async def process_tender(
             (tender_dir / "tender_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
             
             financial_excel = financial_dir / f"Financial_Model_{safe_name}.xlsx"
+            update_job(job_id, stage="بناء النموذج المالي (Excel)...", progress=70)
             run_cmd(["python3", str(SCRIPTS_DIR / "financial_model.py"),
                      str(tender_dir / "tender_meta.json"), str(financial_excel)])
             
@@ -611,6 +783,7 @@ async def process_tender(
                 extracted_intel
             )
             
+            update_job(job_id, stage="توليد المخططات والمناظير المعمارية (4 صور AI)...", progress=80)
             # ===== Architectural renders (LAST - most prone to failure) =====
             plans_dir = job_dir / "results" / safe_name / "03_Architectural"
             plans_dir.mkdir(parents=True, exist_ok=True)
@@ -649,7 +822,9 @@ async def process_tender(
                 if fp.is_file():
                     zf.write(fp, fp.relative_to(results_root))
         
-        # Build response
+        # Build response file list
+        update_job(job_id, stage="تجميع الحزمة النهائية...", progress=95)
+        
         files = [{
             "name": f"Musanada_Package_{job_id}.zip",
             "url": f"/outputs/Musanada_Package_{job_id}.zip",
@@ -667,27 +842,35 @@ async def process_tender(
                         "description": describe_file(fp.name)
                     })
         
-        return JSONResponse({
-            "status": "ok",
-            "job_id": job_id,
-            "tenders_processed": len(all_outputs),
-            "files": files
-        })
+        update_job(job_id,
+            status="ok",
+            stage="اكتمل!",
+            progress=100,
+            tenders_processed=len(all_outputs),
+            files=files,
+            finished_at=datetime.now().isoformat(),
+        )
+        print(f"✓✓✓ Job {job_id} completed: {len(all_outputs)} tenders, {len(files)} files")
+        return  # background thread - no HTTP response
     
     except subprocess.CalledProcessError as e:
-        return JSONResponse({
-            "status": "error",
-            "message": f"خطأ في تشغيل سكريبت: {Path(e.cmd[1]).name if len(e.cmd) > 1 else e.cmd[0]}",
-            "details": (e.stderr or "")[:500],
-        }, status_code=500)
-    except Exception as e:
-        import traceback
         traceback.print_exc()
-        return JSONResponse({
-            "status": "error",
-            "message": str(e),
-            "trace": traceback.format_exc()[:1000]
-        }, status_code=500)
+        update_job(job_id,
+            status="error",
+            stage="خطأ",
+            message=f"خطأ في تشغيل سكريبت: {Path(e.cmd[1]).name if len(e.cmd) > 1 else e.cmd[0]}",
+            details=(e.stderr or "")[:500],
+            finished_at=datetime.now().isoformat(),
+        )
+    except Exception as e:
+        traceback.print_exc()
+        update_job(job_id,
+            status="error",
+            stage="خطأ",
+            message=str(e),
+            error=traceback.format_exc()[:1000],
+            finished_at=datetime.now().isoformat(),
+        )
 
 
 # ============ HELPERS ============
