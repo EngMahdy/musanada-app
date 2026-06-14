@@ -1346,26 +1346,84 @@
     }
   });
   
+  function safeUrl(rawUrl) {
+    // URL-encode path segments to handle spaces and special chars
+    // e.g. /outputs/foo bar/file.pdf → /outputs/foo%20bar/file.pdf
+    if (!rawUrl) return '#';
+    try {
+      const parts = rawUrl.split('/');
+      const encoded = parts.map(p => encodeURIComponent(p)).join('/');
+      // Don't double-encode the leading slash
+      return encoded.replace(/^%2F/, '/');
+    } catch (e) {
+      return rawUrl;
+    }
+  }
+  
   function showResults(data) {
     const resultSection = document.getElementById('resultSection');
     const filesEl = document.getElementById('resultFiles');
     filesEl.innerHTML = '';
     
-    (data.files || []).forEach(f => {
-      const a = document.createElement('a');
-      a.href = f.url;
-      a.target = '_blank';
-      a.className = 'result-file';
-      const ext = (f.name.split('.').pop() || '').toUpperCase();
-      a.innerHTML = `
-        <div class="result-file-icon">${ext}</div>
-        <div class="result-file-info">
-          <strong>${f.name}</strong>
-          <small>${f.description || ''}</small>
-        </div>
-      `;
-      filesEl.appendChild(a);
-    });
+    const files = data.files || [];
+    
+    if (files.length === 0) {
+      filesEl.innerHTML = '<div style="color:white;padding:20px;text-align:center;">لم يتم العثور على ملفات. حاول مرة أخرى.</div>';
+    } else {
+      // Show main ZIP first as a BIG download button
+      const mainZip = files.find(f => f.name && f.name.endsWith('.zip'));
+      
+      if (mainZip) {
+        const bigBtn = document.createElement('a');
+        bigBtn.href = safeUrl(mainZip.url);
+        bigBtn.download = mainZip.name;
+        bigBtn.target = '_blank';
+        bigBtn.style.cssText = `
+          grid-column: 1 / -1;
+          background: linear-gradient(135deg, #C9A24C, #D4B062);
+          color: #0B3D7A;
+          padding: 22px 28px;
+          border-radius: 14px;
+          text-decoration: none;
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          font-weight: 900;
+          font-size: 17px;
+          box-shadow: 0 6px 24px rgba(201,162,76,0.4);
+          transition: transform 0.2s;
+        `;
+        bigBtn.onmouseover = () => bigBtn.style.transform = 'translateY(-3px)';
+        bigBtn.onmouseout = () => bigBtn.style.transform = 'translateY(0)';
+        bigBtn.innerHTML = `
+          <div style="background:#0B3D7A;color:#FFD700;width:60px;height:60px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;">📦</div>
+          <div style="flex:1;text-align:right;">
+            <div style="font-size:18px;margin-bottom:4px;">⬇️ تنزيل الحزمة الكاملة (ZIP)</div>
+            <div style="font-size:13px;font-weight:500;opacity:0.85;">${mainZip.description || ''}</div>
+          </div>
+        `;
+        filesEl.appendChild(bigBtn);
+      }
+      
+      // Then list individual files
+      files.forEach(f => {
+        if (f.name === (mainZip && mainZip.name)) return; // skip the ZIP we already showed
+        
+        const a = document.createElement('a');
+        a.href = safeUrl(f.url);
+        a.target = '_blank';
+        a.className = 'result-file';
+        const ext = (f.name.split('.').pop() || '').toUpperCase();
+        a.innerHTML = `
+          <div class="result-file-icon">${ext}</div>
+          <div class="result-file-info">
+            <strong>${f.name}</strong>
+            <small>${f.description || ''}</small>
+          </div>
+        `;
+        filesEl.appendChild(a);
+      });
+    }
     
     document.querySelector('#mainForm').style.display = 'none';
     resultSection.classList.add('active');
