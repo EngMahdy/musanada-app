@@ -614,11 +614,26 @@ async def process_tender(
             # ===== Architectural renders (LAST - most prone to failure) =====
             plans_dir = job_dir / "results" / safe_name / "03_Architectural"
             plans_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Free up memory before image generation (most memory-intensive step)
+            import gc
+            gc.collect()
+            
             try:
                 generate_architectural(meta, plans_dir, safe_name)
+            except MemoryError:
+                print(f"⚠ OUT OF MEMORY during arch gen - using placeholders")
+                gc.collect()
+                try:
+                    create_placeholder_images(plans_dir, meta)
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"Architectural generation skipped: {e}")
-                create_placeholder_images(plans_dir, meta)
+                try:
+                    create_placeholder_images(plans_dir, meta)
+                except Exception:
+                    pass
             
             # README
             readme_path = job_dir / "results" / safe_name / "00_README.md"
@@ -793,27 +808,51 @@ def generate_architectural(meta, output_dir, name):
         ),
     }
     
+    import gc
     for filename, (prompt, aspect) in prompts.items():
         out_path = output_dir / filename
-        if not generate_image_dalle(prompt, out_path):
-            create_placeholder_image(out_path, filename)
+        try:
+            success = generate_image_dalle(prompt, out_path)
+        except Exception as e:
+            print(f"⚠ Image gen failed for {filename}: {e}")
+            success = False
+        
+        if not success:
+            try:
+                create_placeholder_image(out_path, filename)
+            except Exception as e:
+                print(f"⚠ Placeholder creation failed for {filename}: {e}")
+        
+        # Free memory between images (critical for 512MB Free tier)
+        gc.collect()
+        
+        # Compress the image to save disk space
+        try:
+            compress_image(out_path, quality=80, max_dim=1280)
+        except Exception:
+            pass
 
 
 def generate_image_dalle(prompt, output_path):
-    """Generate via OpenAI gpt-image-2 (latest, replaces DALL-E 3)."""
+    """Generate via OpenAI gpt-image-2 (memory-efficient: streams to disk).
+    
+    Uses streaming + smallest possible size to fit in 512MB Free tier RAM.
+    """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return False
+    
+    import gc
     
     try:
         import requests
         import base64
         
-        # Try newest model first, fallback to older
+        # Use smaller sizes to keep memory low. 1024x1024 = ~1.5MB instead of 4MB
         for model, size in [
-            ("gpt-image-2", "1536x1024"),
-            ("gpt-image-1", "1536x1024"),
-            ("dall-e-3", "1792x1024"),
+            ("gpt-image-2", "1024x1024"),     # Smallest gpt-image-2 size
+            ("gpt-image-1", "1024x1024"),
+            ("dall-e-3", "1024x1024"),
         ]:
             payload = {
                 "model": model,
@@ -821,51 +860,98 @@ def generate_image_dalle(prompt, output_path):
                 "n": 1,
                 "size": size,
             }
-            # dall-e-3 needs quality param, gpt-image doesn't
             if model == "dall-e-3":
                 payload["quality"] = "standard"
             
-            response = requests.post(
-                "https://api.openai.com/v1/images/generations",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=180
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
+            try:
+                # Use streaming to reduce peak memory
+                with requests.post(
+                    "https://api.openai.com/v1/images/generations",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=180,
+                    stream=True
+                ) as response:
+                    
+                    if response.status_code != 200:
+                        try:
+                            err = response.json().get("error", {})
+                            err_msg = err.get("message", "")
+                        except:
+                            err_msg = response.text[:200]
+                        if "does not exist" in err_msg or "not found" in err_msg.lower():
+                            print(f"  {model}: not available, trying next...")
+                            continue
+                        else:
+                            print(f"  {model}: {err_msg[:100]}")
+                            return False
+                    
+                    # Read response (small JSON wrapper)
+                    data = response.json()
+                
                 item = data["data"][0]
                 
-                # gpt-image-X returns base64, dall-e-3 returns URL
                 if "b64_json" in item and item["b64_json"]:
+                    b64_str = item["b64_json"]
+                    del data, item  # free response data immediately
+                    
+                    # Decode + write in one shot, then drop the strings
+                    img_bytes = base64.b64decode(b64_str)
+                    del b64_str
+                    gc.collect()
+                    
                     with open(output_path, "wb") as f:
-                        f.write(base64.b64decode(item["b64_json"]))
-                    print(f"✓ Generated with {model}")
+                        f.write(img_bytes)
+                    del img_bytes
+                    gc.collect()
+                    
+                    size_kb = Path(output_path).stat().st_size // 1024
+                    print(f"✓ Generated with {model} ({size_kb} KB)")
                     return True
+                
                 elif "url" in item and item["url"]:
-                    img_response = requests.get(item["url"], timeout=60)
-                    if img_response.status_code == 200:
-                        with open(output_path, "wb") as f:
-                            f.write(img_response.content)
-                        print(f"✓ Generated with {model}")
-                        return True
-            else:
-                err = response.json().get("error", {})
-                err_msg = err.get("message", "")
-                # Skip model-not-found and try next
-                if "does not exist" in err_msg or "not found" in err_msg.lower():
-                    print(f"  {model}: not available, trying next...")
-                    continue
-                else:
-                    print(f"  {model}: {err_msg[:100]}")
-                    return False
+                    url = item["url"]
+                    del data
+                    # Stream download to file (low memory)
+                    with requests.get(url, timeout=60, stream=True) as img_response:
+                        if img_response.status_code == 200:
+                            with open(output_path, "wb") as f:
+                                for chunk in img_response.iter_content(chunk_size=64 * 1024):
+                                    f.write(chunk)
+                            gc.collect()
+                            print(f"✓ Generated with {model} via URL ({Path(output_path).stat().st_size // 1024} KB)")
+                            return True
+            
+            except Exception as e:
+                print(f"  {model} error: {e}")
+                continue
+        
         return False
     except Exception as e:
         print(f"Image gen failed: {e}")
         return False
+
+
+def compress_image(image_path: Path, quality: int = 80, max_dim: int = 1280):
+    """Compress image in place to reduce size. Saves a lot of memory + disk."""
+    try:
+        from PIL import Image
+        with Image.open(image_path) as img:
+            # Resize if too large
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+            
+            # Save as JPEG-quality PNG (or convert to JPEG)
+            if image_path.suffix.lower() == '.png':
+                # Save as optimized PNG
+                img.save(image_path, "PNG", optimize=True)
+            else:
+                img.save(image_path, quality=quality, optimize=True)
+    except Exception as e:
+        print(f"Could not compress {image_path.name}: {e}")
 
 
 def create_placeholder_image(output_path, filename):
