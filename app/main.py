@@ -851,6 +851,29 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 extracted_intel
             )
             
+            # Build DYNAMIC CHECKLIST from AI intelligence
+            update_job(job_id, stage="بناء قائمة المراجعة الديناميكية...", progress=75)
+            try:
+                # Save saved_docs as JSON for the checklist script
+                saved_docs_path = job_dir / "saved_docs.json"
+                saved_docs_serializable = {k: [str(p) for p in v] for k, v in saved_docs.items()}
+                saved_docs_path.write_text(
+                    json.dumps(saved_docs_serializable, ensure_ascii=False, indent=2),
+                    encoding="utf-8"
+                )
+                
+                checklist_path = job_dir / "results" / safe_name / "07_Dynamic_Checklist.md"
+                run_cmd([
+                    "python3", str(SCRIPTS_DIR / "build_dynamic_checklist.py"),
+                    str(tender_ai_path),
+                    str(forms_data_path),
+                    str(checklist_path),
+                    str(saved_docs_path)
+                ])
+                print(f"✓ Dynamic checklist built: {checklist_path.name}")
+            except Exception as cl_err:
+                print(f"⚠ Dynamic checklist generation failed: {cl_err}")
+            
             update_job(job_id, stage="توليد المخططات والمناظير المعمارية (4 صور AI)...", progress=80)
             # ===== Architectural renders (LAST - most prone to failure) =====
             plans_dir = job_dir / "results" / safe_name / "03_Architectural"
