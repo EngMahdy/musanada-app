@@ -374,6 +374,105 @@
   }
   .btn-add-project:hover { background: #FBF7EE; }
   
+  /* === DOCS UPLOAD GRID === */
+  .docs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .doc-upload {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .doc-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .doc-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+  .doc-header h4 {
+    color: var(--navy);
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.3;
+  }
+  .doc-header small {
+    color: var(--text-light);
+    font-size: 11px;
+    display: block;
+    margin-top: 2px;
+  }
+  .doc-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .doc-dropzone:hover {
+    border-color: var(--gold);
+    background: #FBF7EE;
+  }
+  .doc-dropzone.has-file {
+    border-color: var(--success);
+    background: #F0F8F2;
+    border-style: solid;
+  }
+  .doc-dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .doc-plus {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--navy);
+    color: white;
+    font-size: 20px;
+    line-height: 30px;
+    text-align: center;
+    font-weight: 700;
+  }
+  .doc-dropzone small {
+    color: var(--text-light);
+    font-size: 11px;
+  }
+  .doc-filename {
+    color: var(--success);
+    font-size: 11px;
+    text-align: center;
+    word-break: break-all;
+    min-height: 14px;
+    font-weight: 600;
+  }
+  .ai-note {
+    background: linear-gradient(135deg, rgba(201,162,76,0.1), rgba(11,61,122,0.05));
+    border: 1px solid var(--gold);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+    margin-top: 8px;
+  }
+  .ai-note strong {
+    color: var(--navy);
+  }
+
   /* === SUBMIT === */
   .submit-section {
     text-align: center;
@@ -546,7 +645,8 @@
     <div class="step" data-step="2"><span class="step-num">2</span> بيانات الشركة</div>
     <div class="step" data-step="3"><span class="step-num">3</span> الصور (لوجو/ختم/توقيع)</div>
     <div class="step" data-step="4"><span class="step-num">4</span> المشاريع السابقة</div>
-    <div class="step" data-step="5"><span class="step-num">5</span> توليد الحزمة</div>
+    <div class="step" data-step="5"><span class="step-num">5</span> ملفات الشركة</div>
+    <div class="step" data-step="6"><span class="step-num">6</span> توليد الحزمة</div>
   </div>
 
   <form id="mainForm">
@@ -733,6 +833,178 @@
       <button type="button" class="btn-add-project" id="addProjectBtn">+ إضافة مشروع</button>
     </div>
 
+    <!-- STEP 5: COMPANY DOCUMENTS -->
+    <div class="card">
+      <div class="card-header">
+        <div class="icon">5</div>
+        <h3>ملفات الشركة (مستندات داعمة)</h3>
+      </div>
+      <p style="color:var(--text-light); margin-bottom:16px; font-size:13px; line-height:1.8;">
+        ارفع المستندات الفعلية للشركة. الـAI سيقرأ منها البيانات تلقائياً لملء الفورمات،
+        وسترفق نسخها كمرفقات في الحزمة النهائية (Technical & Financial Submission).
+      </p>
+
+      <div class="docs-grid">
+        <!-- Trade License -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">📜</span>
+            <div>
+              <h4>الرخصة التجارية</h4>
+              <small>للجزء الفني — Form D Item N8</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_license">
+            <input type="file" name="doc_license" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_license">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / JPG / PNG</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_license"></div>
+        </div>
+
+        <!-- Company Profile -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">📑</span>
+            <div>
+              <h4>بروفايل الشركة</h4>
+              <small>للجزء الفني — Form B / Bonus Form D</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_profile">
+            <input type="file" name="doc_profile" accept=".pdf,.docx" hidden id="in_profile">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / DOCX</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_profile"></div>
+        </div>
+
+        <!-- Past Projects -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">🏗️</span>
+            <div>
+              <h4>أعمال سابقة (مرفق)</h4>
+              <small>للجزء الفني — Form G evidence</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_works">
+            <input type="file" name="doc_works" accept=".pdf,.zip,.docx" hidden id="in_works">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / ZIP (متعدد)</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_works"></div>
+        </div>
+
+        <!-- Audited Financials -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">📊</span>
+            <div>
+              <h4>الميزانية المدققة</h4>
+              <small>للجزء المالي — آخر 3 سنوات</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_financials">
+            <input type="file" name="doc_financials" accept=".pdf,.xlsx,.xls" hidden id="in_financials">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / Excel</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_financials"></div>
+        </div>
+
+        <!-- Bank Statement -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">🏦</span>
+            <div>
+              <h4>كشف الحساب البنكي</h4>
+              <small>للجزء المالي — آخر 6 شهور</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_bank">
+            <input type="file" name="doc_bank" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_bank">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / JPG / PNG</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_bank"></div>
+        </div>
+
+        <!-- Owner ID / Emirates ID -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">🪪</span>
+            <div>
+              <h4>هوية الممثل المفوض</h4>
+              <small>Form D Item N9 — POA + Emirates ID</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_id">
+            <input type="file" name="doc_id" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_id">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / JPG / PNG</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_id"></div>
+        </div>
+
+        <!-- Org Chart -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">🗂️</span>
+            <div>
+              <h4>الهيكل التنظيمي</h4>
+              <small>Form D Item N17</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_orgchart">
+            <input type="file" name="doc_orgchart" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_orgchart">
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>PDF / صورة</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_orgchart"></div>
+        </div>
+
+        <!-- Other (multi) -->
+        <div class="doc-upload">
+          <div class="doc-header">
+            <span class="doc-icon">📎</span>
+            <div>
+              <h4>مستندات أخرى</h4>
+              <small>VAT, Judicial Clearance, ECB, ICV, إلخ</small>
+            </div>
+          </div>
+          <label class="doc-dropzone" id="dz_other">
+            <input type="file" name="doc_other" accept=".pdf,.jpg,.jpeg,.png,.docx,.xlsx" hidden id="in_other" multiple>
+            <div class="doc-dropzone-content">
+              <div class="doc-plus">+</div>
+              <small>متعدد - PDF/Image/Doc</small>
+            </div>
+          </label>
+          <div class="doc-filename" id="fn_other"></div>
+        </div>
+      </div>
+
+      <div class="ai-note">
+        <strong>💡 ملاحظة:</strong> الـAI سيقرأ تلقائياً الرخصة والبروفايل لاستخراج
+        رقم الرخصة، تاريخ التأسيس، الأنشطة، والمشاريع السابقة لملء الفورمات.
+        كل الملفات اللي ترفعها هتترفق في الحزمة النهائية في المجلدات المناسبة.
+      </div>
+    </div>
+
     <!-- SUBMIT -->
     <div class="submit-section">
       <button type="submit" class="btn-submit" id="submitBtn">
@@ -817,6 +1089,47 @@
   setupImagePreview('logoPreview', 'logoInput');
   setupImagePreview('signaturePreview', 'signatureInput');
   setupImagePreview('stampPreview', 'stampInput');
+
+  // ========== DOCUMENT DROPZONES ==========
+  function setupDocDropzone(dzId, inputId, fnId) {
+    const dz = document.getElementById(dzId);
+    const input = document.getElementById(inputId);
+    const fn = document.getElementById(fnId);
+    if (!dz || !input) return;
+    
+    dz.addEventListener('click', e => {
+      // labels auto-click input; do not interfere
+    });
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = 'var(--navy)'; });
+    dz.addEventListener('dragleave', () => { dz.style.borderColor = ''; });
+    dz.addEventListener('drop', e => {
+      e.preventDefault();
+      dz.style.borderColor = '';
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        input.dispatchEvent(new Event('change'));
+      }
+    });
+    input.addEventListener('change', () => {
+      if (input.files.length) {
+        const files = Array.from(input.files);
+        if (files.length === 1) {
+          fn.textContent = '✓ ' + files[0].name;
+        } else {
+          fn.textContent = `✓ ${files.length} ملفات: ${files.map(f=>f.name).slice(0,2).join(', ')}${files.length>2?'…':''}`;
+        }
+        dz.classList.add('has-file');
+      }
+    });
+  }
+  
+  const docFields = [
+    'license', 'profile', 'works', 'financials',
+    'bank', 'id', 'orgchart', 'other'
+  ];
+  docFields.forEach(name => {
+    setupDocDropzone(`dz_${name}`, `in_${name}`, `fn_${name}`);
+  });
 
   // ========== PROJECTS ==========
   let projectCount = 0;

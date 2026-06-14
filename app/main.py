@@ -86,6 +86,15 @@ async def process_tender(
     logo: UploadFile = File(None),
     signature: UploadFile = File(None),
     stamp: UploadFile = File(None),
+    # Company supporting documents
+    doc_license: UploadFile = File(None),
+    doc_profile: UploadFile = File(None),
+    doc_works: UploadFile = File(None),
+    doc_financials: UploadFile = File(None),
+    doc_bank: UploadFile = File(None),
+    doc_id: UploadFile = File(None),
+    doc_orgchart: UploadFile = File(None),
+    doc_other: list[UploadFile] = File([]),
     proj_name: list = Form([]),
     proj_location: list = Form([]),
     proj_scope: list = Form([]),
@@ -127,6 +136,59 @@ async def process_tender(
             with open(stamp_path, "wb") as f:
                 shutil.copyfileobj(stamp.file, f)
         
+        # ===== STEP 2.5: Save company documents =====
+        docs_dir = job_dir / "company_docs"
+        docs_dir.mkdir(exist_ok=True)
+        
+        saved_docs = {}  # {category: [paths]}
+        single_docs = {
+            "license": doc_license,
+            "profile": doc_profile,
+            "works": doc_works,
+            "financials": doc_financials,
+            "bank": doc_bank,
+            "id": doc_id,
+            "orgchart": doc_orgchart,
+        }
+        for category, uf in single_docs.items():
+            if uf and uf.filename:
+                cat_dir = docs_dir / category
+                cat_dir.mkdir(exist_ok=True)
+                p = cat_dir / uf.filename
+                with open(p, "wb") as f:
+                    shutil.copyfileobj(uf.file, f)
+                saved_docs.setdefault(category, []).append(p)
+        
+        # Multi-file "other"
+        if doc_other:
+            other_dir = docs_dir / "other"
+            other_dir.mkdir(exist_ok=True)
+            for uf in doc_other:
+                if uf and uf.filename:
+                    p = other_dir / uf.filename
+                    with open(p, "wb") as f:
+                        shutil.copyfileobj(uf.file, f)
+                    saved_docs.setdefault("other", []).append(p)
+        
+        # Extract intelligence from documents
+        extracted_intel = {}
+        if saved_docs.get("license"):
+            extracted_intel["license"] = extract_license_data(saved_docs["license"][0])
+        if saved_docs.get("profile"):
+            extracted_intel["profile"] = extract_profile_data(saved_docs["profile"][0])
+        if saved_docs.get("works"):
+            extracted_intel["projects"] = extract_projects_data(saved_docs["works"][0])
+        if saved_docs.get("financials"):
+            extracted_intel["financials"] = extract_financials_data(saved_docs["financials"][0])
+        if saved_docs.get("bank"):
+            extracted_intel["bank"] = extract_bank_data(saved_docs["bank"][0])
+        
+        # Save intel for transparency
+        (job_dir / "extracted_intel.json").write_text(
+            json.dumps(extracted_intel, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        
         # ===== STEP 3: Build bidder_data.json =====
         projects = []
         for i in range(len(proj_name)):
@@ -147,20 +209,32 @@ async def process_tender(
                 "floor_eff": "92%", "occ_2022": "85%", "occ_2023": "90%",
             })
         
+        # Merge AI-extracted data: form input takes priority, AI fills gaps
+        lic_intel = extracted_intel.get("license", {})
+        prof_intel = extracted_intel.get("profile", {})
+        ai_projects = extracted_intel.get("projects", [])
+        
+        # Add AI-extracted projects to user-provided list (de-dup by name)
+        existing_names = {p["name"].lower() for p in projects if p.get("name")}
+        for ap in ai_projects:
+            if ap.get("name", "").lower() not in existing_names:
+                projects.append(ap)
+                existing_names.add(ap.get("name", "").lower())
+        
         bidder_data = {
             "company_legal_name": company_legal_name,
-            "company_short_name": company_short_name,
+            "company_short_name": company_short_name or prof_intel.get("short_name", ""),
             "legal_form": legal_form,
-            "establishment_date": establishment_date,
-            "nature_of_business": nature_of_business,
+            "establishment_date": establishment_date or lic_intel.get("establishment_date", ""),
+            "nature_of_business": nature_of_business or lic_intel.get("activities", ""),
             "hq_address": hq_address,
             "bidder_address": hq_address,
-            "partners_nationality": "UAE",
-            "company_phone": company_phone,
+            "partners_nationality": lic_intel.get("partners_nationality", "UAE"),
+            "company_phone": company_phone or prof_intel.get("phone", ""),
             "company_fax": company_fax,
             "company_email": company_email,
-            "company_website": company_website,
-            "trade_license_no": trade_license_no,
+            "company_website": company_website or prof_intel.get("website", ""),
+            "trade_license_no": trade_license_no or lic_intel.get("license_no", ""),
             "authorized_signatory_name": authorized_signatory_name,
             "authorized_signatory_title": authorized_signatory_title,
             "contact_person_name": contact_person_name or authorized_signatory_name,
@@ -177,6 +251,7 @@ async def process_tender(
             "logo_path": str(logo_path) if logo_path else None,
             "signature_image_path": str(sig_path) if sig_path else None,
             "stamp_image_path": str(stamp_path) if stamp_path else None,
+            "_extracted_intel": extracted_intel,  # for transparency
         }
         
         bidder_data_path = job_dir / "bidder_data.json"
@@ -255,17 +330,7 @@ async def process_tender(
             run_cmd(["python3", str(SCRIPTS_DIR / "financial_model.py"),
                      str(tender_dir / "tender_meta.json"), str(financial_excel)])
             
-            # Architectural renders (skip if no AI key)
-            plans_dir = job_dir / "results" / safe_name / "03_Architectural"
-            plans_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                generate_architectural(meta, plans_dir, safe_name)
-            except Exception as e:
-                print(f"Architectural generation skipped: {e}")
-                # Create placeholders instead
-                create_placeholder_images(plans_dir, meta)
-            
-            # Copy analysis
+            # Copy analysis (FIRST - cheap operation)
             analysis_dest = job_dir / "results" / safe_name / "04_Analysis"
             analysis_dest.mkdir(parents=True, exist_ok=True)
             
@@ -273,6 +338,65 @@ async def process_tender(
             if analysis_src.exists():
                 shutil.copy2(analysis_src, analysis_dest / "Analysis_AR.md")
             shutil.copy2(forms_data_path, analysis_dest / "bidder_data.json")
+            
+            # ===== Attach company documents (BEFORE arch generation in case it fails) =====
+            # Technical attachments (Package 2)
+            tech_attach = job_dir / "results" / safe_name / "01_Forms" / "Attachments_Technical"
+            tech_attach.mkdir(parents=True, exist_ok=True)
+            
+            attach_categories_tech = {
+                "license": ("N8_Trade_License", "Trade License + Certificate of Incorporation"),
+                "id": ("N9_Power_of_Attorney", "Power of Attorney + Emirates ID"),
+                "orgchart": ("N17_Organization_Chart", "Organization Chart"),
+                "works": ("N18_Bidders_Experience", "Past Projects Evidence"),
+                "profile": ("Bonus_Company_Profile", "Company Profile / Brochure"),
+            }
+            for cat, (folder_name, desc) in attach_categories_tech.items():
+                src_files = saved_docs.get(cat, [])
+                if src_files:
+                    target_dir = tech_attach / folder_name
+                    target_dir.mkdir(exist_ok=True)
+                    for src_file in src_files:
+                        shutil.copy2(src_file, target_dir / src_file.name)
+            
+            # Financial attachments (Package 3)
+            fin_attach = job_dir / "results" / safe_name / "02_Financial_Model" / "Attachments_Financial"
+            fin_attach.mkdir(parents=True, exist_ok=True)
+            
+            attach_categories_fin = {
+                "financials": ("Audited_Financial_Statements", "Audited Financials (3 years)"),
+                "bank": ("Bank_Statements", "Bank Statements (Last 6 Months)"),
+            }
+            for cat, (folder_name, desc) in attach_categories_fin.items():
+                src_files = saved_docs.get(cat, [])
+                if src_files:
+                    target_dir = fin_attach / folder_name
+                    target_dir.mkdir(exist_ok=True)
+                    for src_file in src_files:
+                        shutil.copy2(src_file, target_dir / src_file.name)
+            
+            # Other / misc documents
+            if saved_docs.get("other"):
+                other_attach = job_dir / "results" / safe_name / "05_Additional_Documents"
+                other_attach.mkdir(parents=True, exist_ok=True)
+                for src_file in saved_docs["other"]:
+                    shutil.copy2(src_file, other_attach / src_file.name)
+            
+            # Build attachments index
+            build_attachments_index(
+                job_dir / "results" / safe_name / "06_Attachments_Index.md",
+                saved_docs,
+                extracted_intel
+            )
+            
+            # ===== Architectural renders (LAST - most prone to failure) =====
+            plans_dir = job_dir / "results" / safe_name / "03_Architectural"
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                generate_architectural(meta, plans_dir, safe_name)
+            except Exception as e:
+                print(f"Architectural generation skipped: {e}")
+                create_placeholder_images(plans_dir, meta)
             
             # README
             readme_path = job_dir / "results" / safe_name / "00_README.md"
@@ -565,6 +689,333 @@ def create_placeholder_images(output_dir, meta):
     for fname in ["01_Site_Plan.png", "02_Perspective_3D.png", 
                   "03_Facade_View.png", "04_Interior_Concept.png"]:
         create_placeholder_image(output_dir / fname, fname)
+
+
+# ============ DOCUMENT INTELLIGENCE ============
+def extract_text_from_file(file_path: Path, max_chars: int = 50000) -> str:
+    """Extract text from PDF/DOCX/Image. Returns concatenated text."""
+    suffix = file_path.suffix.lower()
+    text = ""
+    try:
+        if suffix == ".pdf":
+            result = subprocess.run(
+                ["pdftotext", "-layout", str(file_path), "-"],
+                capture_output=True, text=True, timeout=60
+            )
+            text = result.stdout
+        elif suffix == ".docx":
+            from docx import Document
+            doc = Document(str(file_path))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            for t in doc.tables:
+                for row in t.rows:
+                    paragraphs.append(" | ".join(c.text for c in row.cells))
+            text = "\n".join(paragraphs)
+        elif suffix in [".xlsx", ".xls"]:
+            try:
+                from openpyxl import load_workbook
+                wb = load_workbook(str(file_path), data_only=True)
+                rows = []
+                for ws in wb.worksheets:
+                    rows.append(f"== Sheet: {ws.title} ==")
+                    for row in ws.iter_rows(values_only=True):
+                        vals = [str(v) if v is not None else "" for v in row]
+                        if any(vals):
+                            rows.append(" | ".join(vals))
+                text = "\n".join(rows)
+            except Exception:
+                pass
+        elif suffix in [".jpg", ".jpeg", ".png"]:
+            # Could OCR via OpenAI Vision; for now, return placeholder
+            text = "[Image file - OCR not implemented for placeholders]"
+    except Exception as e:
+        print(f"Text extraction failed for {file_path.name}: {e}")
+    
+    return text[:max_chars] if text else ""
+
+
+def call_openai_extract(text: str, schema_instructions: str) -> dict:
+    """Call OpenAI to extract structured data from text. Returns dict or {}."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key or not text.strip():
+        return {}
+    
+    try:
+        import requests
+        prompt = f"""Extract structured data from the following document text.
+Return ONLY valid JSON matching this schema:
+{schema_instructions}
+
+If a field is not found, use empty string "" or empty array [].
+Do not include any explanation, only the JSON object.
+
+Document text:
+\"\"\"
+{text[:30000]}
+\"\"\"
+
+JSON output:"""
+        
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": "You are a data extraction expert. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=60
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return json.loads(content)
+        else:
+            print(f"OpenAI extract failed: {response.status_code} - {response.text[:200]}")
+    except Exception as e:
+        print(f"OpenAI extraction error: {e}")
+    
+    return {}
+
+
+def extract_license_data(file_path: Path) -> dict:
+    """Extract data from Trade License PDF/Image."""
+    text = extract_text_from_file(file_path)
+    if not text:
+        return {"_source": file_path.name, "_status": "no_text"}
+    
+    schema = """{
+    "license_no": "Economic License Number (e.g., CN-1234567)",
+    "trade_name_en": "Company name in English",
+    "trade_name_ar": "Company name in Arabic",
+    "establishment_date": "YYYY-MM-DD",
+    "expiry_date": "YYYY-MM-DD",
+    "legal_form": "e.g. LLC, Sole Proprietorship",
+    "activities": "Main licensed activities (comma-separated)",
+    "owner_name": "Owner / Authorized representative",
+    "partners_nationality": "e.g. UAE",
+    "issuing_authority": "e.g. ADDED Abu Dhabi"
+}"""
+    
+    extracted = call_openai_extract(text, schema)
+    extracted["_source"] = file_path.name
+    return extracted
+
+
+def extract_profile_data(file_path: Path) -> dict:
+    """Extract data from Company Profile PDF/DOCX."""
+    text = extract_text_from_file(file_path)
+    if not text:
+        return {"_source": file_path.name, "_status": "no_text"}
+    
+    schema = """{
+    "short_name": "Brand / short name",
+    "vision": "Vision statement (1 sentence)",
+    "mission": "Mission statement (1 sentence)",
+    "founded_year": "Year of establishment",
+    "team_size": "Number of employees if mentioned",
+    "phone": "Main contact phone",
+    "email": "Main contact email",
+    "website": "Website URL",
+    "address": "HQ address",
+    "key_services": ["service 1", "service 2"],
+    "certifications": ["ISO 9001", "etc"],
+    "key_clients": ["client 1", "client 2"]
+}"""
+    
+    extracted = call_openai_extract(text, schema)
+    extracted["_source"] = file_path.name
+    return extracted
+
+
+def extract_projects_data(file_path: Path) -> list:
+    """Extract past projects from a portfolio PDF for Form G."""
+    text = extract_text_from_file(file_path)
+    if not text:
+        return []
+    
+    schema = """{
+    "projects": [
+        {
+            "name": "Project name",
+            "location": "City / area",
+            "client": "Client name (if mentioned)",
+            "scope": "Develop, manage, operate / etc",
+            "amount": 0,
+            "start": "MM-YYYY or YYYY",
+            "end": "MM-YYYY or YYYY",
+            "gfa": 0,
+            "gla": 0,
+            "status": "Built 100% / Under construction X%",
+            "occupancy": "Occupancy rate if mentioned"
+        }
+    ]
+}"""
+    
+    extracted = call_openai_extract(text, schema)
+    projects = extracted.get("projects", [])
+    
+    # Normalize and add defaults
+    normalized = []
+    for p in projects[:15]:  # max 15 projects
+        normalized.append({
+            "name": p.get("name", ""),
+            "location": p.get("location", ""),
+            "scope": p.get("scope", "Develop, manage and operate"),
+            "amount": int(p.get("amount", 0)) if isinstance(p.get("amount"), (int, float)) else 0,
+            "start": p.get("start", ""),
+            "end": p.get("end", ""),
+            "gfa": int(p.get("gfa", 0)) if isinstance(p.get("gfa"), (int, float)) else 0,
+            "gla": int(p.get("gla", 0)) if isinstance(p.get("gla"), (int, float)) else 0,
+            "status": p.get("status", "Built 100%"),
+            "dev_role": "YES", "leasing_role": "YES", "mgmt_role": "YES",
+            "floor_eff": "92%",
+            "occ_2022": p.get("occupancy", "85%"),
+            "occ_2023": p.get("occupancy", "90%"),
+        })
+    return normalized
+
+
+def extract_financials_data(file_path: Path) -> dict:
+    """Extract key financial figures."""
+    text = extract_text_from_file(file_path)
+    if not text:
+        return {"_source": file_path.name}
+    
+    schema = """{
+    "auditor_name": "Audit firm name",
+    "fiscal_year_end": "YYYY-MM-DD of latest year",
+    "total_revenue_latest": 0,
+    "total_assets_latest": 0,
+    "net_profit_latest": 0,
+    "shareholders_equity": 0,
+    "years_covered": ["2022", "2023", "2024"],
+    "currency": "AED"
+}"""
+    
+    extracted = call_openai_extract(text, schema)
+    extracted["_source"] = file_path.name
+    return extracted
+
+
+def extract_bank_data(file_path: Path) -> dict:
+    """Extract summary from bank statement."""
+    text = extract_text_from_file(file_path)
+    if not text:
+        return {"_source": file_path.name}
+    
+    schema = """{
+    "bank_name": "Bank name",
+    "account_holder": "Account holder name",
+    "account_number": "Account number (last 4 digits only)",
+    "statement_period_start": "YYYY-MM-DD",
+    "statement_period_end": "YYYY-MM-DD",
+    "average_balance": 0,
+    "currency": "AED"
+}"""
+    
+    extracted = call_openai_extract(text, schema)
+    extracted["_source"] = file_path.name
+    return extracted
+
+
+def build_attachments_index(output_path: Path, saved_docs: dict, intel: dict):
+    """Build an index of all attached documents for the bidder."""
+    lines = [
+        "# 📎 فهرس المرفقات",
+        "",
+        "> جدول بكل الملفات اللي رفعتها وأماكنها في الحزمة + البيانات اللي استخرجها الـAI",
+        "",
+        "---",
+        "",
+        "## 📋 المرفقات حسب الفئة",
+        "",
+    ]
+    
+    category_info = {
+        "license": ("📜 الرخصة التجارية", "01_Forms/Attachments_Technical/N8_Trade_License/"),
+        "profile": ("📑 بروفايل الشركة", "01_Forms/Attachments_Technical/Bonus_Company_Profile/"),
+        "works": ("🏗️ الأعمال السابقة", "01_Forms/Attachments_Technical/N18_Bidders_Experience/"),
+        "id": ("🪪 هوية الممثل", "01_Forms/Attachments_Technical/N9_Power_of_Attorney/"),
+        "orgchart": ("🗂️ الهيكل التنظيمي", "01_Forms/Attachments_Technical/N17_Organization_Chart/"),
+        "financials": ("📊 الميزانية المدققة", "02_Financial_Model/Attachments_Financial/Audited_Financial_Statements/"),
+        "bank": ("🏦 كشف بنكي", "02_Financial_Model/Attachments_Financial/Bank_Statements/"),
+        "other": ("📎 مستندات أخرى", "05_Additional_Documents/"),
+    }
+    
+    for cat, (label, location) in category_info.items():
+        files = saved_docs.get(cat, [])
+        if not files:
+            continue
+        lines.append(f"### {label}")
+        lines.append(f"**الموقع:** `{location}`")
+        lines.append("")
+        for f in files:
+            lines.append(f"- `{f.name}` ({f.stat().st_size // 1024} KB)")
+        lines.append("")
+    
+    if intel:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 🤖 البيانات المستخرجة بواسطة AI")
+        lines.append("")
+        lines.append("هذه البيانات استخرجها الـAI تلقائياً من الملفات اللي رفعتها وتم استخدامها لملء الفورمات:")
+        lines.append("")
+        
+        if "license" in intel:
+            lines.append("### من الرخصة التجارية:")
+            lic = intel["license"]
+            for key, val in lic.items():
+                if not key.startswith("_") and val:
+                    lines.append(f"- **{key}:** {val}")
+            lines.append("")
+        
+        if "profile" in intel:
+            lines.append("### من بروفايل الشركة:")
+            prof = intel["profile"]
+            for key, val in prof.items():
+                if not key.startswith("_") and val:
+                    if isinstance(val, list):
+                        lines.append(f"- **{key}:** {', '.join(map(str, val))}")
+                    else:
+                        lines.append(f"- **{key}:** {val}")
+            lines.append("")
+        
+        if "projects" in intel and intel["projects"]:
+            lines.append(f"### مشاريع مستخرجة من ملف الأعمال السابقة ({len(intel['projects'])} مشروع):")
+            for p in intel["projects"][:10]:
+                lines.append(f"- **{p.get('name', '?')}** — {p.get('location', '')} — AED {p.get('amount', 0):,}")
+            lines.append("")
+        
+        if "financials" in intel:
+            lines.append("### من الميزانية المدققة:")
+            fin = intel["financials"]
+            for key, val in fin.items():
+                if not key.startswith("_") and val:
+                    lines.append(f"- **{key}:** {val}")
+            lines.append("")
+        
+        if "bank" in intel:
+            lines.append("### من كشف الحساب البنكي:")
+            bank = intel["bank"]
+            for key, val in bank.items():
+                if not key.startswith("_") and val:
+                    lines.append(f"- **{key}:** {val}")
+            lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("> **ملاحظة:** راجع البيانات المستخرجة قبل التقديم — قد تحتاج تصحيح يدوي إذا كانت الملفات غير واضحة.")
+    
+    output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 # ============ MAIN ============
