@@ -649,11 +649,42 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             if p.is_file():
                 print(f"  {p.relative_to(extracted_dir)}")
         
-        update_job(job_id, stage="قراءة وثيقة المناقصة...", progress=40)
+        update_job(job_id, stage="قراءة وثيقة المناقصة...", progress=35)
         run_cmd(["python3", str(SCRIPTS_DIR / "extract_tender.py"), str(input_dir), str(workspace_dir)])
         
-        update_job(job_id, stage="تحليل المناقصة...", progress=50)
-        # ===== STEP 6: Build analysis =====
+        update_job(job_id, stage="تحليل المناقصة بـ AI (دراسة عميقة)...", progress=45)
+        # ===== STEP 6a: Run AI Reader on the main auction document PDF =====
+        # Find the main Auction Document PDF in extracted_dir
+        main_auction_pdf = None
+        for p in extracted_dir.rglob("*.pdf"):
+            name_lower = p.name.lower()
+            if "auction document" in name_lower or "auction_document" in name_lower:
+                main_auction_pdf = p
+                break
+        # Fallback: largest PDF
+        if not main_auction_pdf:
+            pdfs = list(extracted_dir.rglob("*.pdf"))
+            if pdfs:
+                main_auction_pdf = max(pdfs, key=lambda p: p.stat().st_size)
+        
+        tender_ai_path = job_dir / "tender_intelligence.json"
+        if main_auction_pdf and os.environ.get("OPENAI_API_KEY"):
+            try:
+                env = os.environ.copy()
+                run_cmd(
+                    ["python3", str(SCRIPTS_DIR / "tender_ai_reader.py"),
+                     str(main_auction_pdf), str(tender_ai_path)],
+                )
+                print(f"✓ AI tender intelligence saved: {tender_ai_path}")
+            except Exception as ai_err:
+                print(f"⚠ AI reader failed (will fall back to regex): {ai_err}")
+                tender_ai_path.write_text(json.dumps({"error": str(ai_err)}), encoding="utf-8")
+        else:
+            print(f"⚠ No PDF or OPENAI_API_KEY — skipping AI reader")
+            tender_ai_path.write_text(json.dumps({"error": "no AI"}), encoding="utf-8")
+        
+        update_job(job_id, stage="تحليل المناقصة (regex)...", progress=50)
+        # ===== STEP 6b: Build analysis (regex - lightweight) =====
         run_cmd(["python3", str(SCRIPTS_DIR / "build_analysis.py"), str(workspace_dir)])
         
         # Find tender dirs
@@ -702,9 +733,41 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             forms_data_path = job_dir / f"forms_data_{safe_name}.json"
             forms_data_path.write_text(json.dumps(forms_data, ensure_ascii=False, indent=2), encoding="utf-8")
             
-            update_job(job_id, stage=f"توليد النماذج (Form A, D, E, G, H, I)...", progress=60)
-            run_cmd(["python3", str(SCRIPTS_DIR / "generate_adio_forms.py"), 
-                     str(forms_data_path), str(forms_dir)])
+            # ===== Decide DMT vs ADIO based on AI intelligence =====
+            try:
+                intel = json.loads(tender_ai_path.read_text(encoding="utf-8"))
+            except Exception:
+                intel = {}
+            authority = (intel.get("authority", {}).get("issuing_authority") or "").upper()
+            
+            # Find source DOCX files (DMT originals) in extracted dir for filling
+            dmt_source_dir = None
+            for d in extracted_dir.rglob("*"):
+                if d.is_dir():
+                    docx_files = list(d.glob("*.docx"))
+                    has_form_a = any("Form A" in f.name or "Letter of Auction" in f.name for f in docx_files)
+                    has_kyc = any("KYC" in f.name for f in docx_files)
+                    if has_form_a or has_kyc:
+                        dmt_source_dir = d
+                        break
+            
+            # DMT path requires both AI intel AND original DOCX templates available
+            use_dmt = (authority == "DMT") and dmt_source_dir and (intel.get("authority"))
+            
+            if use_dmt:
+                update_job(job_id, stage=f"توليد النماذج DMT (Form A, B, H, KYC, NDU)...", progress=60)
+                # Add intel to forms_data so DMT script can use tender title
+                run_cmd(["python3", str(SCRIPTS_DIR / "fill_dmt_forms.py"),
+                         str(forms_data_path),
+                         str(tender_ai_path),
+                         str(dmt_source_dir),
+                         str(forms_dir)])
+                print(f"✓ Used DMT form-filling pipeline (source: {dmt_source_dir})")
+            else:
+                update_job(job_id, stage=f"توليد النماذج ADIO (Form A, D, E, G, H, I)...", progress=60)
+                run_cmd(["python3", str(SCRIPTS_DIR / "generate_adio_forms.py"), 
+                         str(forms_data_path), str(forms_dir)])
+                print(f"✓ Used ADIO form-generation pipeline (authority={authority}, dmt_dir={dmt_source_dir})")
             
             # Financial Model
             financial_dir = job_dir / "results" / safe_name / "02_Financial_Model"
