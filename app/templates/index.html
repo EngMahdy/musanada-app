@@ -472,6 +472,27 @@
   .ai-note strong {
     color: var(--navy);
   }
+  .ai-tip {
+    background: linear-gradient(90deg, rgba(11,61,122,0.06), rgba(201,162,76,0.10));
+    border-right: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text);
+    margin-bottom: 20px;
+  }
+  .ai-tip strong {
+    color: var(--navy);
+  }
+  .ai-tip a {
+    color: var(--gold);
+    text-decoration: underline;
+    font-weight: 700;
+  }
+  .card-header h3 small {
+    margin-right: 8px;
+  }
 
   /* === SUBMIT === */
   .submit-section {
@@ -668,17 +689,24 @@
       </div>
     </div>
 
-    <!-- STEP 2: COMPANY DATA -->
+    <!-- STEP 2: COMPANY DATA (Optional - AI fills from documents) -->
     <div class="card">
       <div class="card-header">
         <div class="icon">2</div>
-        <h3>بيانات الشركة</h3>
+        <h3>بيانات الشركة <small style="font-weight:400;color:var(--text-light);font-size:13px;">(اختياري — اتركها فاضية لو هترفع ملفات الشركة في الخطوة 5)</small></h3>
+      </div>
+
+      <div class="ai-tip">
+        <strong>💡 ذكاء AI:</strong> لو رفعت الرخصة التجارية وبروفايل الشركة في
+        <a href="#" onclick="document.querySelector('.card:nth-of-type(5)').scrollIntoView({behavior:'smooth'});return false;">الخطوة 5 (ملفات الشركة)</a>،
+        سيستخرج الـAI كل البيانات هنا تلقائياً (اسم الشركة، تاريخ التأسيس، رقم الرخصة، الأنشطة، اسم المالك، إلخ).
+        املأ ما تريد تعديله أو إضافته فقط.
       </div>
       
       <div class="form-row">
         <div class="form-group">
-          <label>الاسم القانوني للشركة <span class="required">*</span></label>
-          <input type="text" name="company_legal_name" required placeholder="مثال: مساندة للمقاولات ذ.م.م">
+          <label>الاسم القانوني للشركة</label>
+          <input type="text" name="company_legal_name" placeholder="اتركه فاضي — AI سيقرأه من الرخصة">
         </div>
         <div class="form-group">
           <label>الاسم المختصر</label>
@@ -688,9 +716,9 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label>الشكل القانوني <span class="required">*</span></label>
-          <select name="legal_form" required>
-            <option value="">اختر...</option>
+          <label>الشكل القانوني</label>
+          <select name="legal_form">
+            <option value="">اتركه فاضي — AI سيستخرجه</option>
             <option>Limited Liability Company (LLC)</option>
             <option>Sole Proprietorship LLC</option>
             <option>Public Joint Stock Company (PJSC)</option>
@@ -699,22 +727,22 @@
           </select>
         </div>
         <div class="form-group">
-          <label>تاريخ التأسيس <span class="required">*</span></label>
-          <input type="date" name="establishment_date" required>
+          <label>تاريخ التأسيس</label>
+          <input type="date" name="establishment_date">
         </div>
       </div>
 
       <div class="form-row single">
         <div class="form-group">
-          <label>طبيعة النشاط <span class="required">*</span></label>
-          <input type="text" name="nature_of_business" required placeholder="مثال: تطوير عقاري، مقاولات عامة، إدارة عقارات">
+          <label>طبيعة النشاط</label>
+          <input type="text" name="nature_of_business" placeholder="اتركه فاضي — AI سيقرأه من الرخصة">
         </div>
       </div>
 
       <div class="form-row single">
         <div class="form-group">
-          <label>عنوان المقر الرئيسي <span class="required">*</span></label>
-          <input type="text" name="hq_address" required placeholder="مثال: قطعة 33، مصفح 40، أبوظبي">
+          <label>عنوان المقر الرئيسي</label>
+          <input type="text" name="hq_address" placeholder="مثال: قطعة 33، مصفح 40، أبوظبي">
         </div>
       </div>
 
@@ -728,30 +756,30 @@
           <input type="text" name="company_fax" placeholder="+971 2 XXX XXXX">
         </div>
         <div class="form-group">
-          <label>إيميل <span class="required">*</span></label>
-          <input type="email" name="company_email" required placeholder="info@company.ae">
+          <label>إيميل</label>
+          <input type="email" name="company_email" placeholder="info@company.ae">
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
           <label>الموقع الإلكتروني</label>
-          <input type="text" name="company_website" placeholder="www.company.ae">
+          <input type="text" name="company_website" placeholder="AI يستخرجه من البروفايل">
         </div>
         <div class="form-group">
-          <label>رقم الرخصة التجارية <span class="required">*</span></label>
-          <input type="text" name="trade_license_no" required placeholder="CN-XXXXXXX">
+          <label>رقم الرخصة التجارية</label>
+          <input type="text" name="trade_license_no" placeholder="AI يستخرجه من الرخصة (CN-XXXXXXX)">
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label>الممثل المفوض (الاسم الكامل) <span class="required">*</span></label>
-          <input type="text" name="authorized_signatory_name" required placeholder="اسم الممثل المفوض">
+          <label>الممثل المفوض (الاسم الكامل)</label>
+          <input type="text" name="authorized_signatory_name" placeholder="AI يستخرجه من الرخصة">
         </div>
         <div class="form-group">
-          <label>المنصب <span class="required">*</span></label>
-          <input type="text" name="authorized_signatory_title" required placeholder="مثال: المالك / المدير العام">
+          <label>المنصب</label>
+          <input type="text" name="authorized_signatory_title" placeholder="مثال: المالك / المدير العام">
         </div>
       </div>
 
@@ -1214,6 +1242,20 @@
     if (!document.getElementById('tenderFile').files.length) {
       alert('⚠️ من فضلك ارفع ملف المناقصة');
       return;
+    }
+    
+    // Check: either company name OR license document must be provided
+    const hasName = document.querySelector('[name="company_legal_name"]').value.trim();
+    const hasLicense = document.getElementById('in_license') && document.getElementById('in_license').files.length;
+    const hasProfile = document.getElementById('in_profile') && document.getElementById('in_profile').files.length;
+    
+    if (!hasName && !hasLicense && !hasProfile) {
+      const proceed = confirm(
+        '⚠️ لم تدخل اسم الشركة ولم ترفع الرخصة أو البروفايل.\n\n' +
+        'النماذج ستحتوي على placeholder بدلاً من بيانات الشركة الفعلية.\n\n' +
+        'هل تريد المتابعة؟'
+      );
+      if (!proceed) return;
     }
     
     const form = e.target;

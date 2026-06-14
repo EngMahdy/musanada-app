@@ -65,19 +65,20 @@ async def health():
 @app.post("/api/process")
 async def process_tender(
     tender_file: UploadFile = File(...),
-    company_legal_name: str = Form(...),
+    # Company data — ALL OPTIONAL (AI will extract from uploaded documents if not provided)
+    company_legal_name: str = Form(""),
     company_short_name: str = Form(""),
-    legal_form: str = Form(...),
-    establishment_date: str = Form(...),
-    nature_of_business: str = Form(...),
-    hq_address: str = Form(...),
+    legal_form: str = Form(""),
+    establishment_date: str = Form(""),
+    nature_of_business: str = Form(""),
+    hq_address: str = Form(""),
     company_phone: str = Form(""),
     company_fax: str = Form(""),
-    company_email: str = Form(...),
+    company_email: str = Form(""),
     company_website: str = Form(""),
-    trade_license_no: str = Form(...),
-    authorized_signatory_name: str = Form(...),
-    authorized_signatory_title: str = Form(...),
+    trade_license_no: str = Form(""),
+    authorized_signatory_name: str = Form(""),
+    authorized_signatory_title: str = Form(""),
     contact_person_name: str = Form(""),
     contact_person_phone: str = Form(""),
     contact_person_email: str = Form(""),
@@ -221,27 +222,49 @@ async def process_tender(
                 projects.append(ap)
                 existing_names.add(ap.get("name", "").lower())
         
+        # AI-first merge: form input > AI extraction > placeholder
+        # User-provided values take priority, but if blank, fall back to AI-extracted data
+        def best(user_val, ai_val, placeholder=""):
+            """Return user_val if non-empty, else ai_val, else placeholder."""
+            if user_val and str(user_val).strip():
+                return user_val
+            if ai_val and str(ai_val).strip():
+                return ai_val
+            return placeholder
+        
+        final_company_name = best(company_legal_name, lic_intel.get("trade_name_en"), "[Company Name]")
+        final_legal_form = best(legal_form, lic_intel.get("legal_form"), "Limited Liability Company")
+        final_establishment = best(establishment_date, lic_intel.get("establishment_date"), "")
+        final_nature = best(nature_of_business, lic_intel.get("activities"), "")
+        final_license_no = best(trade_license_no, lic_intel.get("license_no"), "")
+        final_hq = best(hq_address, prof_intel.get("address") or lic_intel.get("address"), "Abu Dhabi, UAE")
+        final_phone = best(company_phone, prof_intel.get("phone"), "")
+        final_email = best(company_email, prof_intel.get("email"), "")
+        final_website = best(company_website, prof_intel.get("website"), "")
+        final_signatory = best(authorized_signatory_name, lic_intel.get("owner_name"), "[Authorized Signatory]")
+        final_title = best(authorized_signatory_title, "", "Owner / Managing Director")
+        
         bidder_data = {
-            "company_legal_name": company_legal_name,
-            "company_short_name": company_short_name or prof_intel.get("short_name", ""),
-            "legal_form": legal_form,
-            "establishment_date": establishment_date or lic_intel.get("establishment_date", ""),
-            "nature_of_business": nature_of_business or lic_intel.get("activities", ""),
-            "hq_address": hq_address,
-            "bidder_address": hq_address,
+            "company_legal_name": final_company_name,
+            "company_short_name": best(company_short_name, prof_intel.get("short_name")),
+            "legal_form": final_legal_form,
+            "establishment_date": final_establishment,
+            "nature_of_business": final_nature,
+            "hq_address": final_hq,
+            "bidder_address": final_hq,
             "partners_nationality": lic_intel.get("partners_nationality", "UAE"),
-            "company_phone": company_phone or prof_intel.get("phone", ""),
+            "company_phone": final_phone,
             "company_fax": company_fax,
-            "company_email": company_email,
-            "company_website": company_website or prof_intel.get("website", ""),
-            "trade_license_no": trade_license_no or lic_intel.get("license_no", ""),
-            "authorized_signatory_name": authorized_signatory_name,
-            "authorized_signatory_title": authorized_signatory_title,
-            "contact_person_name": contact_person_name or authorized_signatory_name,
-            "contact_person_phone": contact_person_phone or company_phone,
-            "contact_person_email": contact_person_email or company_email,
+            "company_email": final_email,
+            "company_website": final_website,
+            "trade_license_no": final_license_no,
+            "authorized_signatory_name": final_signatory,
+            "authorized_signatory_title": final_title,
+            "contact_person_name": best(contact_person_name, final_signatory),
+            "contact_person_phone": best(contact_person_phone, final_phone),
+            "contact_person_email": best(contact_person_email, final_email),
             "min_exp_years": 2,
-            "experience_domain": experience_domain or "building and operating similar facilities",
+            "experience_domain": best(experience_domain, "", "building and operating similar facilities"),
             "years_experience": years_experience,
             "submission_date": datetime.now().strftime("%d-%m-%Y"),
             "projects_completed": projects,
@@ -252,6 +275,12 @@ async def process_tender(
             "signature_image_path": str(sig_path) if sig_path else None,
             "stamp_image_path": str(stamp_path) if stamp_path else None,
             "_extracted_intel": extracted_intel,  # for transparency
+            "_data_sources": {  # show user where each field came from
+                "company_legal_name": "user" if company_legal_name else ("ai_license" if lic_intel.get("trade_name_en") else "placeholder"),
+                "establishment_date": "user" if establishment_date else ("ai_license" if lic_intel.get("establishment_date") else "missing"),
+                "trade_license_no": "user" if trade_license_no else ("ai_license" if lic_intel.get("license_no") else "missing"),
+                "authorized_signatory_name": "user" if authorized_signatory_name else ("ai_license" if lic_intel.get("owner_name") else "placeholder"),
+            },
         }
         
         bidder_data_path = job_dir / "bidder_data.json"
@@ -260,26 +289,84 @@ async def process_tender(
         # ===== STEP 4: Extract tender =====
         extracted_dir = job_dir / "extracted_tender"
         extracted_dir.mkdir(exist_ok=True)
+        
+        # Detect file type and handle accordingly
+        tender_filename = tender_file.filename or "uploaded_file"
+        original_suffix = Path(tender_filename).suffix.lower()
+        
+        # Try as ZIP first (works for .zip and sometimes .docx/.pptx)
+        extracted_ok = False
         try:
             with zipfile.ZipFile(tender_path, 'r') as z:
-                z.extractall(extracted_dir)
-        except zipfile.BadZipFile:
-            # Maybe a PDF
-            shutil.copy2(tender_path, extracted_dir / "tender.pdf")
+                # Check if it's really a tender zip (has files)
+                names = z.namelist()
+                if names and any(n.lower().endswith(('.pdf', '.docx', '.rar')) for n in names):
+                    z.extractall(extracted_dir)
+                    extracted_ok = True
+                    print(f"✓ Extracted ZIP: {len(names)} files")
+        except (zipfile.BadZipFile, OSError) as e:
+            print(f"Not a valid ZIP: {e}")
         
-        # ===== STEP 5: Run extract_tender.py =====
+        # If not a ZIP, treat as single PDF/file
+        if not extracted_ok:
+            # Determine extension to use
+            ext = original_suffix if original_suffix in ['.pdf', '.docx', '.rar'] else '.pdf'
+            # Use the original filename, prefixed with "Auction Document" so the classifier picks it up
+            original_stem = Path(tender_filename).stem
+            # If original name doesn't contain "auction" or "rfp", prepend it
+            if 'auction' not in original_stem.lower() and 'rfp' not in original_stem.lower():
+                single_file_name = f"Auction_Document_{original_stem}{ext}"
+            else:
+                single_file_name = f"{original_stem}{ext}"
+            shutil.copy2(tender_path, extracted_dir / single_file_name)
+            print(f"✓ Treated as single file: {single_file_name}")
+        
+        # ===== STEP 5: Normalize structure for extract_tender.py =====
+        # The script expects: input_dir/<TenderName>/Header Attachments/*.pdf
+        # We need to ensure there's at least one tender subfolder
         workspace_dir = job_dir / "workspace"
         workspace_dir.mkdir(exist_ok=True)
         
-        if any(p.is_dir() for p in extracted_dir.iterdir()):
-            input_dir = extracted_dir
-        else:
-            single = extracted_dir / "Tender"
+        # Check what we have
+        has_subdirs = any(p.is_dir() for p in extracted_dir.iterdir())
+        has_files = any(p.is_file() for p in extracted_dir.iterdir())
+        
+        if not has_subdirs and has_files:
+            # Loose files: wrap them in a single "Tender" folder
+            tender_name = Path(tender_filename).stem.replace(" ", "_")[:60] or "Tender"
+            single = extracted_dir / tender_name
             single.mkdir(exist_ok=True)
-            for f in extracted_dir.iterdir():
+            # Add a "Header Attachments" subfolder for script compatibility
+            header_dir = single / "Header Attachments"
+            header_dir.mkdir(exist_ok=True)
+            for f in list(extracted_dir.iterdir()):
                 if f.is_file():
-                    shutil.move(str(f), str(single / f.name))
-            input_dir = extracted_dir
+                    shutil.move(str(f), str(header_dir / f.name))
+            print(f"✓ Wrapped loose files into folder: {tender_name}")
+        elif has_subdirs:
+            # Has subfolders - check if any subfolder has PDF directly (might need Header Attachments wrapper)
+            for sub in extracted_dir.iterdir():
+                if sub.is_dir():
+                    # Look for PDFs at top level of subfolder
+                    pdfs_at_top = list(sub.glob("*.pdf"))
+                    has_header = (sub / "Header Attachments").exists() or any(
+                        d.is_dir() for d in sub.iterdir()
+                    )
+                    if pdfs_at_top and not has_header:
+                        # Wrap them in Header Attachments
+                        header_dir = sub / "Header Attachments"
+                        header_dir.mkdir(exist_ok=True)
+                        for pdf in pdfs_at_top:
+                            shutil.move(str(pdf), str(header_dir / pdf.name))
+                        print(f"✓ Wrapped PDFs in Header Attachments for {sub.name}")
+        
+        input_dir = extracted_dir
+        
+        # Log structure for debugging
+        print(f"=== Input structure ===")
+        for p in sorted(extracted_dir.rglob("*")):
+            if p.is_file():
+                print(f"  {p.relative_to(extracted_dir)}")
         
         run_cmd(["python3", str(SCRIPTS_DIR / "extract_tender.py"), str(input_dir), str(workspace_dir)])
         
@@ -289,8 +376,30 @@ async def process_tender(
         # Find tender dirs
         tender_dirs = [d for d in workspace_dir.iterdir() 
                        if d.is_dir() and (d / "tender_meta.json").exists()]
+        
         if not tender_dirs:
-            raise HTTPException(500, "Could not extract tender data from the file")
+            # Detailed diagnostic
+            workspace_contents = []
+            for p in workspace_dir.rglob("*"):
+                workspace_contents.append(str(p.relative_to(workspace_dir)))
+            
+            extracted_list = []
+            for p in extracted_dir.rglob("*"):
+                if p.is_file():
+                    extracted_list.append(str(p.relative_to(extracted_dir)))
+            
+            error_detail = (
+                f"تعذّر استخراج بيانات المناقصة من الملف '{tender_filename}'.\n\n"
+                f"محتوى الملف المستخرج ({len(extracted_list)} ملف):\n" + 
+                "\n".join(f"  - {p}" for p in extracted_list[:20]) +
+                "\n\nالأسباب المحتملة:\n"
+                "  1. الملف فاضي أو تالف\n"
+                "  2. وثيقة المناقصة ليست PDF\n"
+                "  3. صيغة Auction Document مختلفة عن DMT/ADIO المعتاد\n"
+                "  4. الـPDF محمي بكلمة سر\n\n"
+                "حاول رفع الملف بالكامل (ZIP فيه Auction Document.pdf)."
+            )
+            raise HTTPException(500, error_detail)
         
         # ===== STEP 7+: Process each tender =====
         all_outputs = []
