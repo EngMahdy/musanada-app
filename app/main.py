@@ -670,12 +670,17 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
         tender_ai_path = job_dir / "tender_intelligence.json"
         if main_auction_pdf and os.environ.get("OPENAI_API_KEY"):
             try:
-                env = os.environ.copy()
+                # Use v2 (deep reader: full PDF + GPT-4o refinement + Vision)
+                ai_script = SCRIPTS_DIR / "tender_ai_reader_v2.py"
+                if not ai_script.exists():
+                    ai_script = SCRIPTS_DIR / "tender_ai_reader.py"
+                
+                update_job(job_id, stage="دراسة المناقصة بالكامل بـ AI (GPT-4o + Vision)...", progress=42)
                 run_cmd(
-                    ["python3", str(SCRIPTS_DIR / "tender_ai_reader.py"),
+                    ["python3", "-u", str(ai_script),
                      str(main_auction_pdf), str(tender_ai_path)],
                 )
-                print(f"✓ AI tender intelligence saved: {tender_ai_path}")
+                print(f"✓ AI deep intelligence saved: {tender_ai_path}")
             except Exception as ai_err:
                 print(f"⚠ AI reader failed (will fall back to regex): {ai_err}")
                 tender_ai_path.write_text(json.dumps({"error": str(ai_err)}), encoding="utf-8")
