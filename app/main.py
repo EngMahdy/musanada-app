@@ -64,7 +64,8 @@ async def health():
 
 @app.post("/api/process")
 async def process_tender(
-    tender_file: UploadFile = File(...),
+    # Tender files (multiple allowed)
+    tender_file: list[UploadFile] = File(...),
     # Company data — ALL OPTIONAL (AI will extract from uploaded documents if not provided)
     company_legal_name: str = Form(""),
     company_short_name: str = Form(""),
@@ -87,14 +88,14 @@ async def process_tender(
     logo: UploadFile = File(None),
     signature: UploadFile = File(None),
     stamp: UploadFile = File(None),
-    # Company supporting documents
-    doc_license: UploadFile = File(None),
-    doc_profile: UploadFile = File(None),
-    doc_works: UploadFile = File(None),
-    doc_financials: UploadFile = File(None),
-    doc_bank: UploadFile = File(None),
-    doc_id: UploadFile = File(None),
-    doc_orgchart: UploadFile = File(None),
+    # Company supporting documents — ALL accept multiple files
+    doc_license: list[UploadFile] = File([]),
+    doc_profile: list[UploadFile] = File([]),
+    doc_works: list[UploadFile] = File([]),
+    doc_financials: list[UploadFile] = File([]),
+    doc_bank: list[UploadFile] = File([]),
+    doc_id: list[UploadFile] = File([]),
+    doc_orgchart: list[UploadFile] = File([]),
     doc_other: list[UploadFile] = File([]),
     proj_name: list = Form([]),
     proj_location: list = Form([]),
@@ -110,10 +111,26 @@ async def process_tender(
     job_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        # ===== STEP 1: Save tender file =====
-        tender_path = job_dir / "input_tender.zip"
-        with open(tender_path, "wb") as f:
-            shutil.copyfileobj(tender_file.file, f)
+        # ===== STEP 1: Save tender file(s) =====
+        tender_input_dir = job_dir / "tender_input"
+        tender_input_dir.mkdir(exist_ok=True)
+        
+        tender_files_saved = []
+        for uf in tender_file:
+            if uf and uf.filename:
+                safe_name = uf.filename.replace("/", "_").replace("\\", "_")
+                p = tender_input_dir / safe_name
+                with open(p, "wb") as f:
+                    shutil.copyfileobj(uf.file, f)
+                tender_files_saved.append(p)
+                print(f"✓ Saved tender file: {safe_name} ({p.stat().st_size//1024} KB)")
+        
+        if not tender_files_saved:
+            raise HTTPException(400, "لم يتم رفع أي ملف للمناقصة")
+        
+        # Primary file (first uploaded — used for the legacy single-path logic)
+        tender_path = tender_files_saved[0]
+        tender_filename = tender_path.name
         
         # ===== STEP 2: Save images =====
         images_dir = job_dir / "images"
@@ -137,12 +154,12 @@ async def process_tender(
             with open(stamp_path, "wb") as f:
                 shutil.copyfileobj(stamp.file, f)
         
-        # ===== STEP 2.5: Save company documents =====
+        # ===== STEP 2.5: Save company documents (all support multi-file) =====
         docs_dir = job_dir / "company_docs"
         docs_dir.mkdir(exist_ok=True)
         
         saved_docs = {}  # {category: [paths]}
-        single_docs = {
+        all_doc_categories = {
             "license": doc_license,
             "profile": doc_profile,
             "works": doc_works,
@@ -150,35 +167,55 @@ async def process_tender(
             "bank": doc_bank,
             "id": doc_id,
             "orgchart": doc_orgchart,
+            "other": doc_other,
         }
-        for category, uf in single_docs.items():
-            if uf and uf.filename:
-                cat_dir = docs_dir / category
-                cat_dir.mkdir(exist_ok=True)
-                p = cat_dir / uf.filename
-                with open(p, "wb") as f:
-                    shutil.copyfileobj(uf.file, f)
-                saved_docs.setdefault(category, []).append(p)
-        
-        # Multi-file "other"
-        if doc_other:
-            other_dir = docs_dir / "other"
-            other_dir.mkdir(exist_ok=True)
-            for uf in doc_other:
+        for category, file_list in all_doc_categories.items():
+            if not file_list:
+                continue
+            cat_dir = docs_dir / category
+            cat_dir.mkdir(exist_ok=True)
+            for uf in file_list:
                 if uf and uf.filename:
-                    p = other_dir / uf.filename
+                    safe_name = uf.filename.replace("/", "_").replace("\\", "_")
+                    p = cat_dir / safe_name
+                    # Handle duplicate names
+                    counter = 1
+                    while p.exists():
+                        stem = Path(safe_name).stem
+                        ext = Path(safe_name).suffix
+                        p = cat_dir / f"{stem}_{counter}{ext}"
+                        counter += 1
                     with open(p, "wb") as f:
                         shutil.copyfileobj(uf.file, f)
-                    saved_docs.setdefault("other", []).append(p)
+                    saved_docs.setdefault(category, []).append(p)
+                    print(f"✓ Saved {category}: {p.name}")
         
-        # Extract intelligence from documents
+        # Extract intelligence from documents (process ALL files in each category)
         extracted_intel = {}
         if saved_docs.get("license"):
+            # Use first license file (usually only one)
             extracted_intel["license"] = extract_license_data(saved_docs["license"][0])
         if saved_docs.get("profile"):
+            # Combine all profile files
             extracted_intel["profile"] = extract_profile_data(saved_docs["profile"][0])
         if saved_docs.get("works"):
-            extracted_intel["projects"] = extract_projects_data(saved_docs["works"][0])
+            # Extract projects from ALL works files & merge
+            all_projects = []
+            for wf in saved_docs["works"]:
+                try:
+                    projs = extract_projects_data(wf)
+                    all_projects.extend(projs)
+                except Exception as e:
+                    print(f"Failed to extract from {wf.name}: {e}")
+            # Dedupe by name
+            seen = set()
+            unique_projects = []
+            for p in all_projects:
+                key = p.get("name", "").lower().strip()
+                if key and key not in seen:
+                    seen.add(key)
+                    unique_projects.append(p)
+            extracted_intel["projects"] = unique_projects
         if saved_docs.get("financials"):
             extracted_intel["financials"] = extract_financials_data(saved_docs["financials"][0])
         if saved_docs.get("bank"):
@@ -286,79 +323,155 @@ async def process_tender(
         bidder_data_path = job_dir / "bidder_data.json"
         bidder_data_path.write_text(json.dumps(bidder_data, ensure_ascii=False, indent=2), encoding="utf-8")
         
-        # ===== STEP 4: Extract tender =====
+        # ===== STEP 4: Extract & normalize tender files =====
         extracted_dir = job_dir / "extracted_tender"
         extracted_dir.mkdir(exist_ok=True)
         
-        # Detect file type and handle accordingly
-        tender_filename = tender_file.filename or "uploaded_file"
-        original_suffix = Path(tender_filename).suffix.lower()
+        # Process ALL uploaded tender files
+        all_extracted_files = []  # list of all PDFs/DOCX after extraction
         
-        # Try as ZIP first (works for .zip and sometimes .docx/.pptx)
-        extracted_ok = False
-        try:
-            with zipfile.ZipFile(tender_path, 'r') as z:
-                # Check if it's really a tender zip (has files)
-                names = z.namelist()
-                if names and any(n.lower().endswith(('.pdf', '.docx', '.rar')) for n in names):
-                    z.extractall(extracted_dir)
-                    extracted_ok = True
-                    print(f"✓ Extracted ZIP: {len(names)} files")
-        except (zipfile.BadZipFile, OSError) as e:
-            print(f"Not a valid ZIP: {e}")
-        
-        # If not a ZIP, treat as single PDF/file
-        if not extracted_ok:
-            # Determine extension to use
-            ext = original_suffix if original_suffix in ['.pdf', '.docx', '.rar'] else '.pdf'
-            # Use the original filename, prefixed with "Auction Document" so the classifier picks it up
-            original_stem = Path(tender_filename).stem
-            # If original name doesn't contain "auction" or "rfp", prepend it
-            if 'auction' not in original_stem.lower() and 'rfp' not in original_stem.lower():
-                single_file_name = f"Auction_Document_{original_stem}{ext}"
+        for tf in tender_files_saved:
+            suffix = tf.suffix.lower()
+            
+            if suffix == '.zip':
+                # Extract ZIP
+                try:
+                    with zipfile.ZipFile(tf, 'r') as z:
+                        z.extractall(extracted_dir)
+                        print(f"✓ Extracted ZIP: {tf.name}")
+                except (zipfile.BadZipFile, OSError) as e:
+                    print(f"⚠ Bad ZIP {tf.name}: {e}")
+                    # Treat as PDF
+                    shutil.copy2(tf, extracted_dir / tf.name)
+            
+            elif suffix == '.rar':
+                # Try multiple RAR extraction methods. RAR5 needs unrar-free.
+                extracted_rar = False
+                rar_out_dir = extracted_dir / f"_rar_{tf.stem}"
+                rar_out_dir.mkdir(exist_ok=True)
+                
+                # Order matters: unrar-free works on RAR5 with Unsupported Methods
+                for cmd_attempt in [
+                    ["unrar-free", "x", str(tf), str(rar_out_dir) + "/"],
+                    ["unar", "-o", str(rar_out_dir), str(tf)],
+                    ["unrar", "x", "-y", str(tf), str(rar_out_dir) + "/"],
+                    ["7z", "x", "-y", f"-o{rar_out_dir}", str(tf)],
+                ]:
+                    try:
+                        result = subprocess.run(cmd_attempt, capture_output=True, text=True, timeout=180)
+                        # Verify extraction actually produced non-empty files
+                        non_empty_files = [
+                            p for p in rar_out_dir.rglob("*")
+                            if p.is_file() and p.stat().st_size > 100
+                        ]
+                        if non_empty_files:
+                            extracted_rar = True
+                            print(f"✓ Extracted RAR with {cmd_attempt[0]}: {len(non_empty_files)} non-empty files")
+                            break
+                        else:
+                            # Clean up empty extraction and try next tool
+                            print(f"  {cmd_attempt[0]}: extracted but files are empty, trying next...")
+                            for p in list(rar_out_dir.rglob("*")):
+                                if p.is_file():
+                                    p.unlink()
+                    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                        print(f"  {cmd_attempt[0]}: {type(e).__name__}, trying next...")
+                        continue
+                
+                if extracted_rar:
+                    # Move ALL extracted contents (preserving structure) to extracted_dir
+                    # Walk into rar_out_dir and move each item to extracted_dir
+                    for item in list(rar_out_dir.iterdir()):
+                        target = extracted_dir / item.name
+                        if target.exists():
+                            # Handle conflict - rename
+                            counter = 1
+                            while target.exists():
+                                target = extracted_dir / f"{item.stem}_{counter}{item.suffix}"
+                                counter += 1
+                        shutil.move(str(item), str(target))
+                    shutil.rmtree(rar_out_dir, ignore_errors=True)
+                    print(f"  Moved RAR contents to root")
+                else:
+                    # RAR5 blocker: keep the file as-is (will be reported in attachments)
+                    print(f"⚠ RAR5 blocker — could not extract {tf.name}, will use as attachment only")
+                    rar_blocker_dir = extracted_dir / "_RAR_Could_Not_Extract"
+                    rar_blocker_dir.mkdir(exist_ok=True)
+                    shutil.copy2(tf, rar_blocker_dir / tf.name)
+            
+            elif suffix in ['.pdf', '.docx', '.doc', '.xlsx', '.xls']:
+                # Copy directly (single file)
+                shutil.copy2(tf, extracted_dir / tf.name)
+                print(f"✓ Copied: {tf.name}")
             else:
-                single_file_name = f"{original_stem}{ext}"
-            shutil.copy2(tender_path, extracted_dir / single_file_name)
-            print(f"✓ Treated as single file: {single_file_name}")
+                # Unknown - copy as-is
+                shutil.copy2(tf, extracted_dir / tf.name)
+                print(f"? Unknown type, copied: {tf.name}")
         
         # ===== STEP 5: Normalize structure for extract_tender.py =====
         # The script expects: input_dir/<TenderName>/Header Attachments/*.pdf
-        # We need to ensure there's at least one tender subfolder
         workspace_dir = job_dir / "workspace"
         workspace_dir.mkdir(exist_ok=True)
         
-        # Check what we have
-        has_subdirs = any(p.is_dir() for p in extracted_dir.iterdir())
-        has_files = any(p.is_file() for p in extracted_dir.iterdir())
+        # Find all PDFs in extracted_dir (any depth)
+        all_pdfs = list(extracted_dir.rglob("*.pdf")) + list(extracted_dir.rglob("*.PDF"))
+        all_docs = (list(extracted_dir.rglob("*.docx")) + list(extracted_dir.rglob("*.DOCX")))
         
-        if not has_subdirs and has_files:
-            # Loose files: wrap them in a single "Tender" folder
-            tender_name = Path(tender_filename).stem.replace(" ", "_")[:60] or "Tender"
-            single = extracted_dir / tender_name
-            single.mkdir(exist_ok=True)
-            # Add a "Header Attachments" subfolder for script compatibility
-            header_dir = single / "Header Attachments"
-            header_dir.mkdir(exist_ok=True)
-            for f in list(extracted_dir.iterdir()):
-                if f.is_file():
-                    shutil.move(str(f), str(header_dir / f.name))
-            print(f"✓ Wrapped loose files into folder: {tender_name}")
-        elif has_subdirs:
-            # Has subfolders - check if any subfolder has PDF directly (might need Header Attachments wrapper)
-            for sub in extracted_dir.iterdir():
-                if sub.is_dir():
-                    # Look for PDFs at top level of subfolder
-                    pdfs_at_top = list(sub.glob("*.pdf"))
-                    has_header = (sub / "Header Attachments").exists() or any(
-                        d.is_dir() for d in sub.iterdir()
-                    )
-                    if pdfs_at_top and not has_header:
-                        # Wrap them in Header Attachments
+        print(f"=== Found {len(all_pdfs)} PDFs and {len(all_docs)} DOCX files ===")
+        for p in (all_pdfs + all_docs)[:30]:
+            print(f"  {p.relative_to(extracted_dir)}")
+        
+        # CRITICAL FIX: Check if files contain "auction document" keyword
+        # If NOT, rename one to make the classifier happy
+        has_auction_doc = any(
+            ('auction' in p.name.lower() or 'rfp' in p.name.lower())
+            for p in all_pdfs
+        )
+        
+        if not has_auction_doc and all_pdfs:
+            # Pick the largest PDF (likely the main tender document)
+            largest_pdf = max(all_pdfs, key=lambda p: p.stat().st_size)
+            new_name = f"Auction Document - {largest_pdf.name}"
+            new_path = largest_pdf.parent / new_name
+            shutil.move(str(largest_pdf), str(new_path))
+            print(f"✓ Renamed largest PDF to make it the Auction Document: {new_name}")
+            # Refresh list
+            all_pdfs = list(extracted_dir.rglob("*.pdf")) + list(extracted_dir.rglob("*.PDF"))
+        
+        # Now check structure: ensure there's at least one tender subfolder with Header Attachments
+        # Strategy: if we don't have a clean subfolder structure, wrap everything
+        has_subdirs_with_pdfs = False
+        for sub in extracted_dir.iterdir():
+            if sub.is_dir() and not sub.name.startswith("_"):
+                # Check if this subfolder has PDFs anywhere
+                if list(sub.rglob("*.pdf")) or list(sub.rglob("*.PDF")):
+                    has_subdirs_with_pdfs = True
+                    # Ensure it has a "Header Attachments" subfolder
+                    pdfs_at_top = list(sub.glob("*.pdf")) + list(sub.glob("*.PDF"))
+                    if pdfs_at_top and not (sub / "Header Attachments").exists():
                         header_dir = sub / "Header Attachments"
                         header_dir.mkdir(exist_ok=True)
                         for pdf in pdfs_at_top:
                             shutil.move(str(pdf), str(header_dir / pdf.name))
                         print(f"✓ Wrapped PDFs in Header Attachments for {sub.name}")
+        
+        if not has_subdirs_with_pdfs and all_pdfs:
+            # Loose files at root - wrap them
+            tender_name = "Uploaded_Tender"
+            if tender_files_saved:
+                base = Path(tender_files_saved[0].name).stem
+                tender_name = base.replace(" ", "_")[:60] or tender_name
+            
+            single = extracted_dir / tender_name
+            single.mkdir(exist_ok=True)
+            header_dir = single / "Header Attachments"
+            header_dir.mkdir(exist_ok=True)
+            
+            # Move all loose PDFs/DOCX to Header Attachments
+            for f in list(extracted_dir.iterdir()):
+                if f.is_file() and f.suffix.lower() in ['.pdf', '.docx', '.doc']:
+                    shutil.move(str(f), str(header_dir / f.name))
+            print(f"✓ Wrapped loose files into folder: {tender_name}/Header Attachments/")
         
         input_dir = extracted_dir
         

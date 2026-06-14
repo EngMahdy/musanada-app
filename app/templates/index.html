@@ -672,18 +672,18 @@
 
   <form id="mainForm">
 
-    <!-- STEP 1: TENDER FILE -->
+    <!-- STEP 1: TENDER FILE(S) -->
     <div class="card">
       <div class="card-header">
         <div class="icon">1</div>
-        <h3>ملف المناقصة</h3>
+        <h3>ملفات المناقصة <small style="font-weight:400;color:var(--text-light);font-size:13px;">(يمكن رفع ملفات متعددة)</small></h3>
       </div>
       <div class="dropzone" id="tenderDropzone">
-        <input type="file" id="tenderFile" name="tender_file" accept=".zip,.pdf,.rar">
+        <input type="file" id="tenderFile" name="tender_file" accept=".zip,.pdf,.rar,.docx" multiple>
         <div class="dropzone-icon">📁</div>
         <div class="dropzone-text">
-          <strong>اسحب وأفلت ملف المناقصة هنا</strong>
-          <br>أو اضغط للاختيار (ZIP / PDF / RAR)
+          <strong>اسحب وأفلت ملفات المناقصة هنا</strong>
+          <br>أو اضغط للاختيار (ZIP / PDF / RAR / DOCX — يمكن اختيار أكثر من ملف)
         </div>
         <div class="dropzone-file" id="tenderFileName"></div>
       </div>
@@ -883,10 +883,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_license">
-            <input type="file" name="doc_license" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_license">
+            <input type="file" name="doc_license" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_license" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / JPG / PNG</small>
+              <small>PDF/JPG/PNG • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_license"></div>
@@ -902,10 +902,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_profile">
-            <input type="file" name="doc_profile" accept=".pdf,.docx" hidden id="in_profile">
+            <input type="file" name="doc_profile" accept=".pdf,.docx" hidden id="in_profile" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / DOCX</small>
+              <small>PDF/DOCX • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_profile"></div>
@@ -921,7 +921,7 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_works">
-            <input type="file" name="doc_works" accept=".pdf,.zip,.docx" hidden id="in_works">
+            <input type="file" name="doc_works" accept=".pdf,.zip,.docx" hidden id="in_works" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
               <small>PDF / ZIP (متعدد)</small>
@@ -940,10 +940,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_financials">
-            <input type="file" name="doc_financials" accept=".pdf,.xlsx,.xls" hidden id="in_financials">
+            <input type="file" name="doc_financials" accept=".pdf,.xlsx,.xls" hidden id="in_financials" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / Excel</small>
+              <small>PDF/Excel • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_financials"></div>
@@ -959,10 +959,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_bank">
-            <input type="file" name="doc_bank" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_bank">
+            <input type="file" name="doc_bank" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_bank" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / JPG / PNG</small>
+              <small>PDF/JPG/PNG • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_bank"></div>
@@ -978,10 +978,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_id">
-            <input type="file" name="doc_id" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_id">
+            <input type="file" name="doc_id" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_id" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / JPG / PNG</small>
+              <small>PDF/JPG/PNG • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_id"></div>
@@ -997,10 +997,10 @@
             </div>
           </div>
           <label class="doc-dropzone" id="dz_orgchart">
-            <input type="file" name="doc_orgchart" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_orgchart">
+            <input type="file" name="doc_orgchart" accept=".pdf,.jpg,.jpeg,.png" hidden id="in_orgchart" multiple>
             <div class="doc-dropzone-content">
               <div class="doc-plus">+</div>
-              <small>PDF / صورة</small>
+              <small>PDF/صورة • متعدد</small>
             </div>
           </label>
           <div class="doc-filename" id="fn_orgchart"></div>
