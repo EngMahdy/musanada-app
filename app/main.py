@@ -912,6 +912,18 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 run_cmd(["python3", str(SCRIPTS_DIR / "generate_adio_forms.py"), 
                          str(forms_data_path), str(forms_dir)])
                 print(f"✓ Used ADIO form-generation pipeline (authority={authority}, dmt_dir={dmt_source_dir})")
+
+            
+            # ===== FIX: Remove govt logos + Add Musanada professional header/footer =====
+            update_job(job_id, stage="تطبيق Letterhead مُساندة احترافي...", progress=62)
+            try:
+                brand_dir = BASE_DIR / "app" / "brand"
+                run_cmd(["python3", str(SCRIPTS_DIR / "fix_forms_header.py"),
+                         str(forms_dir), str(forms_data_path), str(brand_dir)])
+                print(f"✓ Applied professional Musanada letterhead to all forms")
+            except Exception as e:
+                print(f"⚠ Letterhead fix failed (non-fatal): {e}")
+
             
             # Financial Model
             financial_dir = job_dir / "results" / safe_name / "02_Financial_Model"
@@ -952,6 +964,17 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             update_job(job_id, stage="بناء النموذج المالي (Excel)...", progress=70)
             run_cmd(["python3", str(SCRIPTS_DIR / "financial_model.py"),
                      str(tender_dir / "tender_meta.json"), str(financial_excel)])
+
+            
+            # ===== ENHANCE: Financial Model with colors, charts, linked formulas =====
+            update_job(job_id, stage="تحسين النموذج المالي (تلوين + رسوم بيانية)...", progress=72)
+            try:
+                run_cmd(["python3", str(SCRIPTS_DIR / "enhance_financial_model.py"),
+                         str(financial_excel)])
+                print(f"✓ Enhanced Financial Model with colors, charts, and linked formulas")
+            except Exception as e:
+                print(f"⚠ Financial enhancement failed (non-fatal): {e}")
+
             
             # Copy analysis (FIRST - cheap operation)
             analysis_dest = job_dir / "results" / safe_name / "04_Analysis"
@@ -961,6 +984,48 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             if analysis_src.exists():
                 shutil.copy2(analysis_src, analysis_dest / "Analysis_AR.md")
             shutil.copy2(forms_data_path, analysis_dest / "bidder_data.json")
+
+            
+            # ===== ORGANIZE: Financial Documents Folder =====
+            financial_docs_dir = job_dir / "results" / safe_name / "03_Financial_Documents"
+            financial_docs_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy financial attachments if provided
+            financial_attach_cats = {
+                "bank_statement": "Bank_Statement.pdf",
+                "audited_financials": "Audited_Financials.xlsx",
+                "bank_reference": "Bank_Reference_Letter.pdf",
+            }
+            for cat, filename in financial_attach_cats.items():
+                src_files = saved_docs.get(cat, [])
+                if src_files:
+                    for src in src_files:
+                        if Path(src).exists():
+                            shutil.copy2(src, financial_docs_dir / filename)
+                            print(f"✓ Copied {filename} to Financial Documents")
+            
+            # Create MISSING_DOCUMENTS.md if no financial docs provided
+            if not any(saved_docs.get(cat) for cat in financial_attach_cats.keys()):
+                missing_docs_md = financial_docs_dir / "MISSING_DOCUMENTS.md"
+                missing_docs_md.write_text("""# ⚠️ مستندات مالية مطلوبة
+
+يُرجى توفير المستندات التالية لإكمال الحزمة:
+
+1. **كشف الحساب البنكي** (آخر 6 شهور)
+   - المسار: `03_Financial_Documents/Bank_Statement.pdf`
+
+2. **القوائم المالية المُدققة** (2023-2024)
+   - المسار: `03_Financial_Documents/Audited_Financials.xlsx`
+
+3. **خطاب من البنك** (يُثبت القدرة المالية)
+   - المسار: `03_Financial_Documents/Bank_Reference_Letter.pdf`
+
+---
+
+**ملاحظة**: هذه المستندات **اختيارية** لكنها تُقوّي الملف بشكل كبير.
+""", encoding="utf-8")
+                print(f"✓ Created MISSING_DOCUMENTS.md in Financial Documents folder")
+
             
             # ===== Attach company documents (BEFORE arch generation in case it fails) =====
             # Technical attachments (Package 2)
