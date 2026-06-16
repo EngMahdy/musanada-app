@@ -1291,22 +1291,44 @@
       addLog(`✓ تم استلام الملفات (Job ID: ${jobId})`);
       titleEl.textContent = 'جاري تجهيز الحزمة في الخلفية...';
       
-      // Step 2: Poll job status every 4 seconds
+      // Step 2: Robust polling — 2s base interval, exponential backoff on errors,
+      // friendly UI message instead of red 'agent hasn't confirmed' on first miss.
+      // Warmup ping to Render to mitigate free-tier cold start.
+      try { await fetch('/healthz', { cache: 'no-store' }); } catch (_) {}
+
       let lastStage = '';
       let lastProgress = 0;
       let attempts = 0;
-      const maxAttempts = 150;  // 10 minutes max
-      
+      let consecutiveErrors = 0;
+      const maxAttempts = 300;       // ~10 min @ 2s
+      const basePollMs = 2000;
+      const maxBackoffMs = 16000;
+
       while (attempts < maxAttempts) {
-        await new Promise(r => setTimeout(r, 4000));
+        const sleepMs = consecutiveErrors > 0
+          ? Math.min(basePollMs * Math.pow(2, consecutiveErrors), maxBackoffMs)
+          : basePollMs;
+        await new Promise(r => setTimeout(r, sleepMs));
         attempts++;
-        
+
         let jobStatus;
         try {
-          const statusResp = await fetch(`/api/job/${jobId}`);
+          const ctrl = new AbortController();
+          const tmo = setTimeout(() => ctrl.abort(), 90000);
+          const statusResp = await fetch(`/api/job/${jobId}`, { signal: ctrl.signal, cache: 'no-store' });
+          clearTimeout(tmo);
           jobStatus = await statusResp.json();
+          consecutiveErrors = 0;
         } catch (err) {
-          addLog(`⚠ خطأ في الاستعلام: ${err.message}`);
+          consecutiveErrors++;
+          if (consecutiveErrors === 1) {
+            stageEl.textContent = 'تم الاستلام، جاري المعالجة...';
+          }
+          if (consecutiveErrors <= 3) {
+            addLog(`⏳ بنحاول تاني... (${consecutiveErrors})`);
+          } else {
+            addLog(`⚠ اتصال بطيء: ${err.message || 'timeout'}`);
+          }
           continue;
         }
         

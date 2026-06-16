@@ -105,13 +105,63 @@ async def index():
 
 
 @app.get("/health")
+@app.get("/healthz")
 async def health():
     return {
         "status": "ok",
         "service": "musanada-app",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "ts": datetime.now().isoformat()
     }
+
+
+# ---------------------------------------------------------------------------
+# Agent confirmation endpoints (fix for cold-start polling race condition)
+# Lightweight in-memory store; survives single instance lifetime which is
+# enough for the wizard answer flow (TTL handled by job system).
+# ---------------------------------------------------------------------------
+_AGENT_ANSWERS_STORE: dict = {}
+
+
+@app.post("/api/agent/answer")
+async def agent_answer(request: Request):
+    """Store agent answer immediately and ACK back so the wizard never
+    shows 'agent hasn't confirmed yet' due to upstream cold start."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    aid = payload.get("answer_id") or str(uuid.uuid4())
+    _AGENT_ANSWERS_STORE[aid] = {
+        "text": payload.get("text", ""),
+        "context": payload.get("context", {}),
+        "ts": datetime.now().isoformat(),
+        "status": "received",
+    }
+    return JSONResponse({
+        "status": "received",
+        "answer_id": aid,
+        "message": "تم الاستلام، جاري المعالجة...",
+        "ts": datetime.now().isoformat(),
+    })
+
+
+@app.get("/api/agent/confirm/{answer_id}")
+async def agent_confirm(answer_id: str):
+    """Fast ACK lookup the frontend can poll without waiting on AI work."""
+    rec = _AGENT_ANSWERS_STORE.get(answer_id)
+    if not rec:
+        # Soft-200: avoid red error on the UI; treat as 'pending'
+        return JSONResponse({
+            "status": "pending",
+            "answer_id": answer_id,
+            "message": "لسه بنجهّز، حاول تاني خلال ثانية",
+        })
+    return JSONResponse({
+        "status": "received",
+        "answer_id": answer_id,
+        "ts": rec.get("ts"),
+    })
 
 
 @app.get("/api/job/{job_id}")
