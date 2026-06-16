@@ -62,7 +62,10 @@
     justify-content: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
-  .brand-logo img { width: 48px; height: 48px; object-fit: contain; }
+  .brand-logo img { width: 72px; height: 72px; object-fit: contain; background: white; border-radius: 8px; padding: 4px; }
+  @media (max-width: 720px) {
+    .brand-logo img { width: 56px; height: 56px; }
+  }
   .brand-text h1 {
     font-size: 22px;
     font-weight: 900;
@@ -636,7 +639,7 @@
   <div class="header-content">
     <div class="brand">
       <div class="brand-logo">
-        <img src="/static/favicon.png" alt="Musanada">
+        <img src="/static/logo.png" alt="مساندة - Musanada Engineering Consultancy">
       </div>
       <div class="brand-text">
         <h1>مساندة للاستشارات الهندسية ودراسات الجدوى</h1>
