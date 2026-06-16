@@ -216,6 +216,8 @@ async def process_tender(
     proj_start: list = Form([]),
     proj_end: list = Form([]),
     proj_gfa: list = Form([]),
+    # Optional: user-provided rent assumption (skips market search if given)
+    user_rent_per_sqm_per_year: str = Form(""),
 ):
     """Submit tender for processing. Returns job_id immediately - poll /api/job/{id}.
     
@@ -344,6 +346,7 @@ async def process_tender(
             "proj_start": list(proj_start),
             "proj_end": list(proj_end),
             "proj_gfa": list(proj_gfa),
+            "user_rent_per_sqm_per_year": user_rent_per_sqm_per_year,
             "logo_path": str(logo_path) if logo_path else None,
             "sig_path": str(sig_path) if sig_path else None,
             "stamp_path": str(stamp_path) if stamp_path else None,
@@ -989,6 +992,47 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 except Exception:
                     pass
             
+            # ===== STEP: Tender Intelligence Analysis (5 reports) =====
+            try:
+                update_job(job_id, stage=f"تحليل المناقصة (فني + مالي + سوق)...", progress=85)
+                from app.intelligence import run_full_intelligence
+                from app.intelligence.renderer import render_intelligence_pdfs
+
+                # Parse user-provided rent (if any)
+                _urent_raw = form_data.get("user_rent_per_sqm_per_year", "") or ""
+                try:
+                    _urent = float(_urent_raw) if _urent_raw.strip() else None
+                except (ValueError, TypeError):
+                    _urent = None
+
+                # Derive auction text + area name from meta
+                _auction_text = meta.get("raw_text") or meta.get("auction_text") or json.dumps(meta, ensure_ascii=False)
+                _area = (meta.get("area") or meta.get("location") or tender_name.split(",")[-1].strip())[:80]
+                _company_name = company_legal_name or company_short_name or "Bidder Company"
+
+                intel = run_full_intelligence(
+                    tender_name=tender_name,
+                    auction_text=_auction_text,
+                    area_name=_area,
+                    company_name=_company_name,
+                    user_rent_per_sqm_per_year=_urent,
+                )
+
+                intel_dir = job_dir / "results" / safe_name / "06_Tender_Intelligence"
+                intel_dir.mkdir(parents=True, exist_ok=True)
+                _logo = Path(__file__).parent / "brand" / "logo.png"
+                render_intelligence_pdfs(intel, intel_dir, logo_path=_logo if _logo.exists() else None)
+
+                # Persist JSON snapshot for transparency
+                (intel_dir / "00_intelligence_data.json").write_text(
+                    json.dumps(intel, ensure_ascii=False, indent=2, default=str),
+                    encoding="utf-8"
+                )
+                print(f"✓ Intelligence reports generated for {tender_name}: decision={intel['strategic']['decision']}")
+            except Exception as _intel_err:
+                print(f"⚠ Intelligence step skipped (non-fatal): {_intel_err}")
+                traceback.print_exc()
+
             # README
             readme_path = job_dir / "results" / safe_name / "00_README.md"
             readme_path.write_text(build_tender_readme(meta, bidder_data), encoding="utf-8")
