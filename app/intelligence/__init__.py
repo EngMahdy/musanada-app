@@ -1,16 +1,17 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Musanada Tender Intelligence Module
-====================================
-وحدة دراسة المناقصات الذكية: 5 محللات تعمل بالتوازي.
-
-Modules:
-- technical   : تحليل المتطلبات الفنية من Auction Document
-- financial   : تحليل مالي CAPEX/OPEX/IRR/NPV/Payback
-- market      : بحث ويب حي - أسعار إيجارات + منافسين
-- strategic   : SWOT + مخاطر + توصية مبدئية
-- summary     : ملخص تنفيذي Go/No-Go بصفحتين
-
-Entry point: run_full_intelligence(tender_data, company_data, user_inputs)
+Intelligence Module — Entry point
 """
 
-from .orchestrator import run_full_intelligence  # noqa: F401
+from .license_reader import extract_company_from_license, smart_fill_company_data
+from .authority_detector import detect_issuing_authority, authority_to_form_pipeline
+from .tender_parser import DeepTenderParser
+
+__all__ = [
+    'extract_company_from_license',
+    'smart_fill_company_data',
+    'detect_issuing_authority',
+    'authority_to_form_pipeline',
+    'DeepTenderParser',
+]

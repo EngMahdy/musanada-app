@@ -14,6 +14,19 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+# Import professional formatting utilities
+try:
+    from professional_formatter import (
+        add_professional_header,
+        add_professional_footer,
+        add_signature_stamp_block,
+        generate_reference_id
+    )
+    PROFESSIONAL_FORMAT_AVAILABLE = True
+except ImportError:
+    PROFESSIONAL_FORMAT_AVAILABLE = False
+    print("⚠️  Professional formatter not available, using basic formatting")
+
 try:
     from docx import Document
     from docx.shared import Pt, Cm, Mm, RGBColor, Inches, Emu
