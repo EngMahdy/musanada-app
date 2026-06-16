@@ -808,7 +808,69 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             forms_data = dict(bidder_data)
             forms_data["tender_no"] = meta.get("auction_title", "")[:30]
             forms_data["tender_name"] = tender_name
-            
+
+            # ===== STEP: Run Tender Intelligence EARLY so forms can use its outputs =====
+            tender_intel = None
+            try:
+                update_job(job_id, stage="دراسة المناقصة (فني + مالي + سوق)...", progress=55)
+                from app.intelligence import run_full_intelligence
+
+                _urent_raw = form_data.get("user_rent_per_sqm_per_year", "") or ""
+                try:
+                    _urent = float(_urent_raw) if _urent_raw.strip() else None
+                except (ValueError, TypeError):
+                    _urent = None
+
+                _auction_text = meta.get("raw_text") or meta.get("auction_text") or json.dumps(meta, ensure_ascii=False)
+                _area = (meta.get("area") or meta.get("location") or tender_name.split(",")[-1].strip())[:80]
+                _company_name = company_legal_name or company_short_name or "Bidder Company"
+
+                tender_intel = run_full_intelligence(
+                    tender_name=tender_name,
+                    auction_text=_auction_text,
+                    area_name=_area,
+                    company_name=_company_name,
+                    user_rent_per_sqm_per_year=_urent,
+                )
+
+                # ----- Inject intelligence outputs into forms_data (used by Form A/B/D/E generators) -----
+                _h = tender_intel["financial"]["headline"]
+                _a = tender_intel["financial"]["assumptions"]
+                _es = tender_intel["executive_summary"]
+                _st = tender_intel["strategic"]
+
+                # Headline pricing (Form A — Letter of Auction)
+                forms_data["proposed_annual_rent_aed"] = round(_a["plot_area_sqm"] * _a["rent_per_sqm_per_year"], 0)
+                forms_data["proposed_rent_per_sqm"] = _a["rent_per_sqm_per_year"]
+                forms_data["rent_source"] = _a["rent_source"]
+                forms_data["plot_area_sqm"] = _a["plot_area_sqm"]
+                forms_data["lease_years"] = _a["lease_years"]
+
+                # Financial highlights (Form B/D — Business Plan / Investment Plan)
+                forms_data["capex_aed"] = _h["capex"]
+                forms_data["capex_per_sqm"] = _a["capex_per_sqm"]
+                forms_data["annual_revenue_stabilized"] = _h["annual_revenue_stabilized"]
+                forms_data["annual_opex_stabilized"] = _h["annual_opex_stabilized"]
+                forms_data["annual_ebitda_stabilized"] = _h["annual_ebitda_stabilized"]
+                forms_data["irr_pct"] = _h.get("irr_pct")
+                forms_data["payback_years"] = _h.get("payback_years")
+                forms_data["npv_aed_10pct"] = _h.get("npv_aed")
+                forms_data["total_net_profit_lease"] = _h.get("total_net_profit_lease")
+
+                # Strategic narrative (Form B — Experience & Capabilities)
+                forms_data["project_type"] = tender_intel.get("project_type", "general")
+                forms_data["decision_signal"] = _st.get("signal", "\U0001F7E1")
+                forms_data["decision"] = _st.get("decision", "CONDITIONAL")
+                forms_data["pricing_recommendation"] = _es.get("pricing_recommendation", "")
+                forms_data["top_strengths"] = _st.get("swot", {}).get("strengths", [])[:3]
+                forms_data["top_risks"] = [r.get("title", "") for r in _st.get("risks", [])[:3]]
+                forms_data["operating_model"] = _build_operating_model_text(tender_intel)
+
+                print(f"✓ Intelligence injected into forms_data for {tender_name}: rent={forms_data['proposed_annual_rent_aed']:.0f} AED IRR={forms_data.get('irr_pct')}%")
+            except Exception as _intel_err:
+                print(f"⚠ Intelligence injection failed (non-fatal): {_intel_err}")
+                traceback.print_exc()
+
             forms_dir = job_dir / "results" / safe_name / "01_Forms"
             forms_dir.mkdir(parents=True, exist_ok=True)
             
@@ -862,6 +924,28 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
             meta["contract_years"] = int(meta.get("contract_years", 25))
             meta["grace_period_years"] = int(meta.get("grace_period_years", 1))
             meta["annual_escalation_govt"] = 0.02
+
+            # ----- Enrich meta with intelligence outputs so Excel model uses real numbers -----
+            if tender_intel is not None:
+                _h = tender_intel["financial"]["headline"]
+                _a = tender_intel["financial"]["assumptions"]
+                meta["intel_capex"] = _h["capex"]
+                meta["intel_rent_per_sqm"] = _a["rent_per_sqm_per_year"]
+                meta["intel_rent_source"] = _a["rent_source"]
+                meta["intel_irr_pct"] = _h.get("irr_pct")
+                meta["intel_payback_years"] = _h.get("payback_years")
+                meta["intel_npv_aed"] = _h.get("npv_aed")
+                meta["intel_ebitda_stabilized"] = _h.get("annual_ebitda_stabilized")
+                meta["intel_revenue_stabilized"] = _h.get("annual_revenue_stabilized")
+                meta["intel_decision"] = tender_intel["strategic"].get("decision")
+                meta["intel_signal"] = tender_intel["strategic"].get("signal")
+                meta["intel_project_type"] = tender_intel.get("project_type")
+                # Override land_area_sqm with intelligence value if it parsed one
+                if _a.get("plot_area_sqm"):
+                    meta["land_area_sqm"] = float(_a["plot_area_sqm"])
+                # Override min_rent_per_sqm with researched/user value (Excel model uses this)
+                if _a.get("rent_per_sqm_per_year"):
+                    meta["market_rent_per_sqm"] = float(_a["rent_per_sqm_per_year"])
             (tender_dir / "tender_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
             
             financial_excel = financial_dir / f"Financial_Model_{safe_name}.xlsx"
@@ -992,46 +1076,32 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 except Exception:
                     pass
             
-            # ===== STEP: Tender Intelligence Analysis (5 reports) =====
-            try:
-                update_job(job_id, stage=f"تحليل المناقصة (فني + مالي + سوق)...", progress=85)
-                from app.intelligence import run_full_intelligence
-                from app.intelligence.renderer import render_intelligence_pdfs
-
-                # Parse user-provided rent (if any)
-                _urent_raw = form_data.get("user_rent_per_sqm_per_year", "") or ""
+            # ===== STEP: Render Intelligence PDFs + Feasibility Volume III =====
+            if tender_intel is not None:
                 try:
-                    _urent = float(_urent_raw) if _urent_raw.strip() else None
-                except (ValueError, TypeError):
-                    _urent = None
+                    update_job(job_id, stage="توليد تقارير الدراسة (5 PDFs) + Volume III...", progress=85)
+                    from app.intelligence.renderer import render_intelligence_pdfs
+                    from app.intelligence.feasibility import build_feasibility_volume
 
-                # Derive auction text + area name from meta
-                _auction_text = meta.get("raw_text") or meta.get("auction_text") or json.dumps(meta, ensure_ascii=False)
-                _area = (meta.get("area") or meta.get("location") or tender_name.split(",")[-1].strip())[:80]
-                _company_name = company_legal_name or company_short_name or "Bidder Company"
+                    _logo = Path(__file__).parent / "brand" / "logo.png"
+                    _logo_arg = _logo if _logo.exists() else None
 
-                intel = run_full_intelligence(
-                    tender_name=tender_name,
-                    auction_text=_auction_text,
-                    area_name=_area,
-                    company_name=_company_name,
-                    user_rent_per_sqm_per_year=_urent,
-                )
+                    intel_dir = job_dir / "results" / safe_name / "06_Tender_Intelligence"
+                    intel_dir.mkdir(parents=True, exist_ok=True)
+                    render_intelligence_pdfs(tender_intel, intel_dir, logo_path=_logo_arg)
+                    (intel_dir / "00_intelligence_data.json").write_text(
+                        json.dumps(tender_intel, ensure_ascii=False, indent=2, default=str),
+                        encoding="utf-8"
+                    )
 
-                intel_dir = job_dir / "results" / safe_name / "06_Tender_Intelligence"
-                intel_dir.mkdir(parents=True, exist_ok=True)
-                _logo = Path(__file__).parent / "brand" / "logo.png"
-                render_intelligence_pdfs(intel, intel_dir, logo_path=_logo if _logo.exists() else None)
-
-                # Persist JSON snapshot for transparency
-                (intel_dir / "00_intelligence_data.json").write_text(
-                    json.dumps(intel, ensure_ascii=False, indent=2, default=str),
-                    encoding="utf-8"
-                )
-                print(f"✓ Intelligence reports generated for {tender_name}: decision={intel['strategic']['decision']}")
-            except Exception as _intel_err:
-                print(f"⚠ Intelligence step skipped (non-fatal): {_intel_err}")
-                traceback.print_exc()
+                    # Volume III — formal Feasibility Study PDF (goes into Technical Submission)
+                    vol3_dir = job_dir / "results" / safe_name / "01_Forms" / "Volume_III_Feasibility_Study"
+                    vol3_dir.mkdir(parents=True, exist_ok=True)
+                    build_feasibility_volume(tender_intel, forms_data, vol3_dir, logo_path=_logo_arg)
+                    print(f"✓ Intelligence + Volume III generated for {tender_name}: decision={tender_intel['strategic']['decision']}")
+                except Exception as _intel_err:
+                    print(f"⚠ Intelligence rendering failed (non-fatal): {_intel_err}")
+                    traceback.print_exc()
 
             # README
             readme_path = job_dir / "results" / safe_name / "00_README.md"
@@ -1126,6 +1196,28 @@ def describe_file(filename):
     if "analysis" in lower: return "التحليل العربي"
     if "readme" in lower: return "دليل الحزمة"
     return ""
+
+
+def _build_operating_model_text(intel: dict) -> str:
+    """Generate a 3-paragraph English operating-model narrative for Form B/E."""
+    pt = intel.get("project_type", "commercial")
+    fin = intel.get("financial", {})
+    a = fin.get("assumptions", {})
+    h = fin.get("headline", {})
+    swot = intel.get("strategic", {}).get("swot", {})
+    paragraphs = [
+        f"The proposed venture is a {pt.replace('_', ' ')} facility on a {a.get('plot_area_sqm', 0):,} sqm plot in {intel.get('area_name', 'Abu Dhabi')}, "
+        f"with a {a.get('lease_years', 25)}-year operating lease. The total CAPEX is estimated at AED {h.get('capex', 0):,.0f} "
+        f"({a.get('capex_per_sqm', 0):,} AED/sqm), reflecting prevailing UAE construction benchmarks for this asset class.",
+
+        f"At stabilization, the project generates AED {h.get('annual_revenue_stabilized', 0):,.0f} in annual revenue with an EBITDA "
+        f"of AED {h.get('annual_ebitda_stabilized', 0):,.0f}. The financial model projects an IRR of {h.get('irr_pct', 'n/a')}% "
+        f"and a payback period of {h.get('payback_years', 'n/a')} years against a 10% discount rate, indicating a viable risk-adjusted return.",
+
+        "Key strengths include: " + "; ".join(swot.get("strengths", [])[:3]) + ". "
+        "The operating plan emphasizes phased ramp-up over the first 4 years, robust facility management, and active marketing to local catchment populations.",
+    ]
+    return "\n\n".join(paragraphs)
 
 
 def build_tender_readme(meta, bidder):

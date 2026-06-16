@@ -372,7 +372,38 @@ def build_form_a(data, output_dir):
     
     meta = {**data, "subject": "Form A — Proposal Cover Letter"}
     add_meta_block(doc, meta)
-    
+
+    # ===== Pricing offer paragraph (auto-filled from Tender Intelligence) =====
+    _proposed = data.get("proposed_annual_rent_aed")
+    _per_sqm = data.get("proposed_rent_per_sqm")
+    _src = data.get("rent_source", "")
+    _area = data.get("plot_area_sqm")
+    _lease = data.get("lease_years", 25)
+    _irr = data.get("irr_pct")
+    _payback = data.get("payback_years")
+    if _proposed and _per_sqm and _area:
+        add_section_header(doc, "PROPOSED FINANCIAL OFFER")
+        offer_text = (
+            f"In line with our comprehensive feasibility analysis, we hereby submit our "
+            f"financial offer for the captioned auction on the basis of the following terms:\n\n"
+            f"• Proposed Annual Rent to Authority: AED {_proposed:,.0f}\n"
+            f"• Equivalent Rate: AED {_per_sqm:,.0f} per sqm per year\n"
+            f"• Plot Area: {_area:,.0f} sqm\n"
+            f"• Lease Term: {_lease} years\n"
+        )
+        if _irr is not None:
+            offer_text += f"• Projected Project IRR: {_irr}%\n"
+        if _payback is not None:
+            offer_text += f"• Projected Payback Period: {_payback} years\n"
+        offer_text += (
+            f"\nThis pricing has been derived through a structured financial model "
+            f"based on {_src.lower() if _src else 'market research'}, and is supported by the "
+            f"detailed Feasibility Study (Volume III) submitted herewith."
+        )
+        for para in offer_text.split("\n"):
+            if para.strip():
+                add_styled_paragraph(doc, para.strip(), size=10, space_after=4)
+
     # CAPEX section
     add_section_header(doc, "CAPITAL EXPENDITURES BREAKDOWN")
     
