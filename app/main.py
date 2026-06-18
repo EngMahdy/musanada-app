@@ -925,6 +925,77 @@ def _run_processing_in_background(job_id: str, job_dir_str: str):
                 print(f"⚠ Letterhead fix failed (non-fatal): {e}")
 
             
+
+            # ===== SMART GENERATION: Auto-generate projects, branding, profile =====
+            try:
+                update_job(job_id, stage="توليد مشاريع سابقة ذكية...", progress=64)
+                
+                # Extract tender text for smart analysis
+                _tender_text_for_smart = (meta.get("raw_text") or 
+                                          meta.get("auction_text") or 
+                                          json.dumps(meta, ensure_ascii=False))
+                _company_for_smart = company_legal_name or company_short_name or "Bidder Company"
+                
+                # 1) Generate realistic past projects (sector-aware)
+                smart_projects_path = job_dir / f"smart_projects_{safe_name}.json"
+                _tender_text_path = job_dir / f"_smart_tender_text_{safe_name}.txt"
+                _tender_text_path.write_text(_tender_text_for_smart, encoding="utf-8")
+                
+                run_cmd(["python3", str(SCRIPTS_DIR / "smart_project_generator.py"),
+                         str(_tender_text_path),
+                         _company_for_smart,
+                         str(smart_projects_path)])
+                
+                # Read generated projects and inject into forms_data
+                if smart_projects_path.exists():
+                    _projects_data = json.loads(smart_projects_path.read_text(encoding="utf-8"))
+                    forms_data["smart_projects"] = _projects_data["projects"]
+                    forms_data["smart_project_type"] = _projects_data["project_type_ar"]
+                    forms_data["smart_total_value"] = _projects_data["total_value_aed"]
+                    print(f"✓ Smart projects generated: {len(_projects_data['projects'])} in {_projects_data['project_type_ar']}")
+                
+                # 2) Generate branding assets (logo, stamp, signature)
+                smart_brand_dir = job_dir / f"smart_brand_{safe_name}"
+                smart_brand_dir.mkdir(exist_ok=True)
+                
+                _company_data_for_brand = {
+                    "company_name_ar": company_legal_name or "شركة الاستشارات",
+                    "company_name_en": company_short_name or "Consultancy Co.",
+                    "license_no": forms_data.get("license_no") or "CN-XXXXXX",
+                    "authorized_signatory": forms_data.get("authorized_signatory") or "المدير العام",
+                    "established": forms_data.get("establishment_date") or "2015",
+                    "activity": forms_data.get("activity_description") or "استشارات هندسية",
+                }
+                _brand_input_path = job_dir / f"_smart_brand_input_{safe_name}.json"
+                _brand_input_path.write_text(json.dumps(_company_data_for_brand, ensure_ascii=False), encoding="utf-8")
+                
+                try:
+                    run_cmd(["python3", str(SCRIPTS_DIR / "smart_branding.py"),
+                             str(_brand_input_path), str(smart_brand_dir)])
+                    print(f"✓ Smart branding assets generated in {smart_brand_dir}")
+                except Exception as _be:
+                    print(f"⚠ Smart branding failed (non-fatal): {_be}")
+                
+                # 3) Generate full company profile
+                if smart_projects_path.exists():
+                    company_profile_dir = job_dir / "results" / safe_name / "01_Forms" / "Attachments_Technical" / "Bonus_Company_Profile"
+                    company_profile_dir.mkdir(parents=True, exist_ok=True)
+                    profile_output = company_profile_dir / "16.3 Company Profile (Auto-Generated).docx"
+                    
+                    try:
+                        run_cmd(["python3", str(SCRIPTS_DIR / "smart_company_profile.py"),
+                                 str(_brand_input_path),
+                                 str(smart_projects_path),
+                                 str(profile_output)])
+                        print(f"✓ Smart company profile generated: {profile_output}")
+                    except Exception as _pe:
+                        print(f"⚠ Smart profile failed (non-fatal): {_pe}")
+                
+            except Exception as _smart_err:
+                print(f"⚠ Smart generation block failed (non-fatal): {_smart_err}")
+                import traceback
+                traceback.print_exc()
+
             # Financial Model
             financial_dir = job_dir / "results" / safe_name / "02_Financial_Model"
             financial_dir.mkdir(parents=True, exist_ok=True)
